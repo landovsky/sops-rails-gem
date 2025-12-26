@@ -67,7 +67,7 @@ module SopsRails
         public_key = ensure_age_key(non_interactive: non_interactive)
         create_sops_config(public_key, non_interactive: non_interactive)
         update_gitignore(non_interactive: non_interactive)
-        create_initial_credentials(non_interactive: non_interactive)
+        create_initial_credentials(non_interactive: non_interactive, public_key: public_key)
 
         puts
         puts "✓ sops-rails initialized successfully!"
@@ -229,11 +229,12 @@ module SopsRails
       # Create initial encrypted credentials file.
       #
       # @param non_interactive [Boolean] If true, overwrites existing file without prompting
+      # @param public_key [String] The age public key to encrypt with (bypasses .sops.yaml matching)
       # @return [void]
       # @raise [SopsNotFoundError] if SOPS binary is not available
-      # @raise [DecryptionError] if encryption fails
+      # @raise [EncryptionError] if encryption fails
       #
-      def create_initial_credentials(non_interactive: false)
+      def create_initial_credentials(non_interactive: false, public_key: nil)
         credentials_path = "config/credentials.yaml.enc"
         credentials_dir = File.dirname(credentials_path)
 
@@ -254,8 +255,13 @@ module SopsRails
         begin
           File.write(temp_file, CREDENTIALS_TEMPLATE)
 
-          # Encrypt using SOPS
-          stdout, stderr, status = Open3.capture3("sops", "-e", "-i", temp_file)
+          # Encrypt using SOPS with explicit age key to avoid .sops.yaml pattern matching issues
+          # (temp file name doesn't match the credentials regex pattern)
+          sops_args = ["sops", "-e", "-i"]
+          sops_args.push("--age", public_key) if public_key
+          sops_args.push(temp_file)
+
+          stdout, stderr, status = Open3.capture3(*sops_args)
           unless status.success?
             error_message = stderr.strip.empty? ? stdout.strip : stderr.strip
             raise EncryptionError,

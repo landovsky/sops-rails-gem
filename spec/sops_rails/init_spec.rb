@@ -402,6 +402,20 @@ RSpec.describe SopsRails::Init do
         end
       end
     end
+
+    context "when public_key is provided" do
+      let(:public_key) { "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" }
+
+      it "passes the age key explicitly to SOPS to avoid .sops.yaml pattern matching issues" do
+        expect(Open3).to receive(:capture3) do |*args|
+          expect(args).to include("--age")
+          expect(args).to include(public_key)
+          ["", "", double(success?: true)]
+        end
+
+        described_class.create_initial_credentials(non_interactive: true, public_key: public_key)
+      end
+    end
   end
 
   describe ".run" do
@@ -420,18 +434,20 @@ RSpec.describe SopsRails::Init do
       expect(described_class).to receive(:ensure_age_key).with(non_interactive: false).ordered
       expect(described_class).to receive(:create_sops_config).with(public_key, non_interactive: false).ordered
       expect(described_class).to receive(:update_gitignore).with(non_interactive: false).ordered
-      expect(described_class).to receive(:create_initial_credentials).with(non_interactive: false).ordered
+      expect(described_class).to receive(:create_initial_credentials).with(non_interactive: false,
+                                                                           public_key: public_key).ordered
 
       described_class.run(non_interactive: false)
     end
 
-    it "passes non_interactive flag to all methods" do
+    it "passes non_interactive flag and public_key to all methods" do
       described_class.run(non_interactive: true)
 
       expect(described_class).to have_received(:ensure_age_key).with(non_interactive: true)
       expect(described_class).to have_received(:create_sops_config).with(public_key, non_interactive: true)
       expect(described_class).to have_received(:update_gitignore).with(non_interactive: true)
-      expect(described_class).to have_received(:create_initial_credentials).with(non_interactive: true)
+      expect(described_class).to have_received(:create_initial_credentials).with(non_interactive: true,
+                                                                                 public_key: public_key)
     end
   end
 
@@ -475,7 +491,7 @@ RSpec.describe SopsRails::Init do
       end
 
       it "creates an encrypted file that can be decrypted" do
-        described_class.create_initial_credentials(non_interactive: true)
+        described_class.create_initial_credentials(non_interactive: true, public_key: public_key)
 
         expect(File.exist?("config/credentials.yaml.enc")).to be true
 
