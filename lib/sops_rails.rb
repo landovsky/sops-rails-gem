@@ -7,6 +7,7 @@ require_relative "sops_rails/errors"
 require_relative "sops_rails/configuration"
 require_relative "sops_rails/binary"
 require_relative "sops_rails/credentials"
+require_relative "sops_rails/railtie" if defined?(Rails)
 
 # SopsRails provides SOPS encryption support for Rails applications.
 #

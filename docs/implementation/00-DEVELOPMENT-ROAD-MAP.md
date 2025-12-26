@@ -4,7 +4,7 @@ A detailed agile roadmap for implementing the sops-rails gem. Each stage deliver
 
 ---
 
-## [IN PROGRESS] Stage 1: Core MVP — Read Encrypted Credentials 🎯
+## [DONE] Stage 1: Core MVP — Read Encrypted Credentials ✅
 
 **Goal:** Enable Rails applications to read SOPS-encrypted YAML credential files in development mode.
 
@@ -74,32 +74,32 @@ Parse decrypted YAML and provide convenient access API.
 
 ---
 
-#### 1.4 Rails Integration (Railtie)
+#### [DONE] 1.4 Rails Integration (Railtie)
 
 Integrate with Rails boot process.
 
 **Description:**
-- Create `Sops::Railtie` for Rails integration
+- Create `SopsRails::Railtie` for Rails integration
 - Auto-load configuration from `config/initializers/sops.rb` if present
-- Make `Sops.credentials` available throughout Rails app
-- Support usage in `database.yml` via ERB: `<%= Sops.credentials.db.password %>`
+- Make `SopsRails.credentials` available throughout Rails app
+- Support usage in `database.yml` via ERB: `<%= SopsRails.credentials.db.password %>`
 
 **Acceptance Criteria:**
-- [ ] Gem loads automatically in Rails application
-- [ ] `Sops.credentials` accessible in Rails console
-- [ ] `Sops.credentials` accessible in initializers
-- [ ] ERB interpolation works in `database.yml`
-- [ ] No errors when gem loads without credentials file (lazy loading)
+- [x] Gem loads automatically in Rails application
+- [x] `SopsRails.credentials` accessible in Rails console
+- [x] `SopsRails.credentials` accessible in initializers
+- [x] ERB interpolation works in `database.yml`
+- [x] No errors when gem loads without credentials file (lazy loading)
 
 ---
 
 ### Stage 1 Definition of Done
 
-- [ ] All acceptance criteria pass
-- [ ] Unit tests for Configuration, Binary, Credentials modules
-- [ ] Integration test: encrypted file → `Sops.credentials` access
-- [ ] Works with Ruby 3.0+ and Rails 7.0+
-- [ ] Basic error handling with clear messages
+- [x] All acceptance criteria pass
+- [x] Unit tests for Configuration, Binary, Credentials, Railtie modules
+- [x] Integration test: encrypted file → `SopsRails.credentials` access
+- [x] Works with Ruby 3.2+ and Rails 7.0+
+- [x] Basic error handling with clear messages
 
 ---
 

@@ -179,6 +179,43 @@ Support a "decrypted mode" where the gem reads plain YAML files instead of calli
 
 ---
 
+## ADR-007: Minimal Railtie for Rails Integration
+
+**Status:** Accepted
+**Date:** 2025-12-26
+**Stage:** 1.4 (Rails Integration)
+
+### Context
+
+The gem needs to integrate with Rails applications so that `SopsRails.credentials` is available throughout the app—in initializers, models, controllers, views, and ERB config files like `database.yml`.
+
+Options considered:
+
+1. **Minimal Railtie** — Just inherit from `Rails::Railtie`, rely on Bundler auto-loading
+2. **Railtie with initializer hooks** — Use `initializer` blocks to set up configuration
+3. **Engine** — Full Rails Engine with routes, assets, etc.
+
+### Decision
+
+Use a minimal Railtie that simply inherits from `Rails::Railtie` without custom initializer hooks.
+
+### Rationale
+
+- **Simplicity**: Bundler automatically loads the gem when Rails boots, making `SopsRails` available immediately
+- **Early Availability**: The gem is loaded before `database.yml` is processed, enabling ERB like `<%= SopsRails.credentials.db.password %>`
+- **Convention**: Rails initializers (`config/initializers/sops.rb`) are loaded automatically—no need for explicit Railtie hooks
+- **Lazy Loading**: Credentials are loaded on first access (ADR-005), so no Railtie setup is required
+- **Less Code**: No custom hooks means less code to maintain and fewer edge cases
+
+### Consequences
+
+- Configuration happens via `config/initializers/sops.rb` (standard Rails pattern)
+- No automatic Rails.env-based configuration (can be added in Stage 4)
+- Works seamlessly with ERB in YAML config files
+- Testing requires mocking Rails, but the minimal implementation keeps tests simple
+
+---
+
 ## Template for New Decisions
 
 ```markdown
