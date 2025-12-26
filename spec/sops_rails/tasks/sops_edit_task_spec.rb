@@ -8,83 +8,11 @@ Rake::Task.define_task(:environment) unless Rake::Task.task_defined?(:environmen
 load File.expand_path("../../../lib/sops_rails/tasks/sops.rake", __dir__) unless defined?(SopsEditTask)
 
 RSpec.describe SopsEditTask do
-  before do
-    # Clear ARGV for clean test state
-    ARGV.clear
-  end
-
-  describe ".parse_args" do
-    context "with no arguments" do
-      before do
-        ARGV.replace(["sops:edit"])
-      end
-
-      it "returns nil for both file and environment" do
-        file_arg, environment = described_class.parse_args
-        expect(file_arg).to be_nil
-        expect(environment).to be_nil
-      end
-    end
-
-    context "with -e flag" do
-      before do
-        ARGV.replace(["sops:edit", "-e", "production"])
-      end
-
-      it "returns production as environment" do
-        file_arg, environment = described_class.parse_args
-        expect(file_arg).to be_nil
-        expect(environment).to eq("production")
-      end
-    end
-
-    context "with --environment flag" do
-      before do
-        ARGV.replace(["sops:edit", "--environment", "staging"])
-      end
-
-      it "returns staging as environment" do
-        file_arg, environment = described_class.parse_args
-        expect(file_arg).to be_nil
-        expect(environment).to eq("staging")
-      end
-    end
-
-    context "with file path argument" do
-      before do
-        ARGV.replace(["sops:edit", "config/secrets.yaml.enc"])
-      end
-
-      it "returns file path" do
-        file_arg, environment = described_class.parse_args
-        expect(file_arg).to eq("config/secrets.yaml.enc")
-        expect(environment).to be_nil
-      end
-    end
-
-    context "with both file and environment flag" do
-      before do
-        ARGV.replace(["sops:edit", "config/custom.yaml.enc", "-e", "production"])
-      end
-
-      it "returns both file and environment" do
-        file_arg, environment = described_class.parse_args
-        expect(file_arg).to eq("config/custom.yaml.enc")
-        expect(environment).to eq("production")
-      end
-    end
-
-    context "with environment flag before file" do
-      before do
-        ARGV.replace(["sops:edit", "-e", "production", "config/custom.yaml.enc"])
-      end
-
-      it "returns both file and environment" do
-        file_arg, environment = described_class.parse_args
-        expect(file_arg).to eq("config/custom.yaml.enc")
-        expect(environment).to eq("production")
-      end
-    end
+  around do |example|
+    # Save and restore RAILS_ENV for clean test state
+    original_env = ENV["RAILS_ENV"]
+    example.run
+    ENV["RAILS_ENV"] = original_env
   end
 
   describe ".resolve_file_path" do
@@ -93,48 +21,48 @@ RSpec.describe SopsEditTask do
         config.encrypted_path = "config"
         config.credential_files = ["credentials.yaml.enc"]
       end
+      ENV["RAILS_ENV"] = nil
     end
 
     context "with explicit file argument" do
       it "returns the file argument" do
-        path = described_class.resolve_file_path("config/secrets.yaml.enc", nil)
+        path = described_class.resolve_file_path("config/secrets.yaml.enc")
         expect(path).to eq("config/secrets.yaml.enc")
       end
 
-      it "returns file argument even if environment is provided" do
-        path = described_class.resolve_file_path("config/secrets.yaml.enc", "production")
+      it "returns file argument even if RAILS_ENV is set" do
+        ENV["RAILS_ENV"] = "production"
+        path = described_class.resolve_file_path("config/secrets.yaml.enc")
         expect(path).to eq("config/secrets.yaml.enc")
       end
     end
 
-    context "with environment but no file" do
-      it "returns environment-specific credentials path" do
-        path = described_class.resolve_file_path(nil, "production")
+    context "with RAILS_ENV but no file" do
+      it "returns environment-specific credentials path for production" do
+        ENV["RAILS_ENV"] = "production"
+        path = described_class.resolve_file_path(nil)
         expect(path).to eq("config/credentials.production.yaml.enc")
       end
 
       it "handles staging environment" do
-        path = described_class.resolve_file_path(nil, "staging")
+        ENV["RAILS_ENV"] = "staging"
+        path = described_class.resolve_file_path(nil)
         expect(path).to eq("config/credentials.staging.yaml.enc")
       end
     end
 
-    context "with neither file nor environment" do
+    context "with neither file nor RAILS_ENV" do
       it "returns default credentials path" do
-        path = described_class.resolve_file_path(nil, nil)
+        path = described_class.resolve_file_path(nil)
         expect(path).to eq("config/credentials.yaml.enc")
       end
     end
 
     context "with empty strings" do
       it "treats empty file as nil" do
-        path = described_class.resolve_file_path("", "production")
+        ENV["RAILS_ENV"] = "production"
+        path = described_class.resolve_file_path("")
         expect(path).to eq("config/credentials.production.yaml.enc")
-      end
-
-      it "treats empty environment as nil" do
-        path = described_class.resolve_file_path(nil, "")
-        expect(path).to eq("config/credentials.yaml.enc")
       end
     end
 
@@ -146,13 +74,14 @@ RSpec.describe SopsEditTask do
         end
       end
 
-      it "uses custom encrypted_path" do
-        path = described_class.resolve_file_path(nil, "production")
+      it "uses custom encrypted_path with RAILS_ENV" do
+        ENV["RAILS_ENV"] = "production"
+        path = described_class.resolve_file_path(nil)
         expect(path).to eq("secrets/credentials.production.yaml.enc")
       end
 
       it "uses custom default credential file" do
-        path = described_class.resolve_file_path(nil, nil)
+        path = described_class.resolve_file_path(nil)
         expect(path).to eq("secrets/custom.yaml.enc")
       end
     end
@@ -229,31 +158,35 @@ RSpec.describe SopsEditTask do
         config.encrypted_path = "config"
         config.credential_files = ["credentials.yaml.enc"]
       end
+      ENV["RAILS_ENV"] = nil
     end
 
-    describe "parsing arguments without flags returns default path" do
+    describe "resolving with no arguments returns default path" do
       it "resolves to default credentials file" do
-        ARGV.replace(["sops:edit"])
-        file_arg, environment = described_class.parse_args
-        path = described_class.resolve_file_path(file_arg, environment)
+        path = described_class.resolve_file_path(nil)
         expect(path).to eq("config/credentials.yaml.enc")
       end
     end
 
-    describe "parsing -e production flag" do
+    describe "resolving with RAILS_ENV=production" do
       it "resolves to environment-specific file" do
-        ARGV.replace(["sops:edit", "-e", "production"])
-        file_arg, environment = described_class.parse_args
-        path = described_class.resolve_file_path(file_arg, environment)
+        ENV["RAILS_ENV"] = "production"
+        path = described_class.resolve_file_path(nil)
         expect(path).to eq("config/credentials.production.yaml.enc")
       end
     end
 
-    describe "parsing custom file path" do
+    describe "resolving with custom file path" do
       it "uses the provided path" do
-        ARGV.replace(["sops:edit", "config/custom.yaml.enc"])
-        file_arg, environment = described_class.parse_args
-        path = described_class.resolve_file_path(file_arg, environment)
+        path = described_class.resolve_file_path("config/custom.yaml.enc")
+        expect(path).to eq("config/custom.yaml.enc")
+      end
+    end
+
+    describe "file argument takes priority over RAILS_ENV" do
+      it "uses explicit file even when RAILS_ENV is set" do
+        ENV["RAILS_ENV"] = "production"
+        path = described_class.resolve_file_path("config/custom.yaml.enc")
         expect(path).to eq("config/custom.yaml.enc")
       end
     end

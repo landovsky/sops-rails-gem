@@ -111,22 +111,22 @@ Integrate with Rails boot process.
 
 ### Features
 
-#### [DONE] 2.1 Rake Task: `sops:show`
+#### [REWORK] 2.1 Rake Task: `sops:show`
 
 Display decrypted credentials in terminal.
 
 **Description:**
 - Show decrypted contents of default credentials file
-- Support `FILE` argument for specific file
-- Support `-e ENVIRONMENT` flag for environment files
+- Support `FILE` argument for specific file (using Rake bracket syntax)
+- Support `RAILS_ENV` environment variable for environment files
 - Use same in-memory decryption as credentials reader
 
 **Acceptance Criteria:**
-- [ ] `rails sops:show` outputs decrypted YAML to stdout
-- [ ] `rails sops:show config/credentials.production.yaml.enc` shows specific file
-- [ ] `rails sops:show -e production` shows `credentials.production.yaml.enc`
-- [ ] Output is valid YAML format
-- [ ] Exits with error code 1 and message if decryption fails
+- [x] `rails sops:show` outputs decrypted YAML to stdout
+- [ ] `rails sops:show[config/credentials.production.yaml.enc]` shows specific file
+- [ ] `RAILS_ENV=production rails sops:show` shows `credentials.production.yaml.enc`
+- [x] Output is valid YAML format
+- [x] Exits with error code 1 and message if decryption fails
 
 ---
 
@@ -145,15 +145,15 @@ Edit encrypted credentials in user's editor.
 - Open encrypted file in `$EDITOR` (fallback: `vim`, then `nano`)
 - Delegate editing to SOPS native edit command (`sops <file>`)
 - Create new encrypted file if target doesn't exist
-- Support `-e ENVIRONMENT` flag
+- Support `RAILS_ENV` environment variable for environment files
 
 **Acceptance Criteria:**
-- [ ] `rails sops:edit` opens default credentials file in editor
-- [ ] `rails sops:edit -e production` opens/creates environment file
-- [ ] `rails sops:edit config/custom.yaml.enc` opens specific file
-- [ ] Saving in editor re-encrypts the file
-- [ ] Aborting editor (exit without save) leaves file unchanged
-- [ ] Creating new file prompts for initial content or creates template
+- [x] `rails sops:edit` opens default credentials file in editor
+- [x] `RAILS_ENV=production rails sops:edit` opens/creates environment file
+- [x] `rails sops:edit[config/custom.yaml.enc]` opens specific file
+- [x] Saving in editor re-encrypts the file
+- [x] Aborting editor (exit without save) leaves file unchanged
+- [x] Creating new file prompts for initial content or creates template
 
 ---
 
@@ -655,6 +655,12 @@ Items to address when time permits:
 - Or extract shared methods and DRY up both modules
 
 ---
+
+### TD-2: Don't abort init when chosing not to override a file
+```
+✓ Age key found at /Users/tomas/Library/Application Support/sops/age/keys.txt
+.sops.yaml already exists. Overwrite? [y/N]
+```
 
 ## Implementation Order & Dependencies
 
