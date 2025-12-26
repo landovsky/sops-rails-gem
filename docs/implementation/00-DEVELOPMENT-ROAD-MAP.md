@@ -53,7 +53,7 @@ Create a clean interface for shelling out to the SOPS binary.
 
 ---
 
-#### 1.3 [DONE] Credentials Reader
+#### [DONE] 1.3 Credentials Reader
 
 Parse decrypted YAML and provide convenient access API.
 
@@ -103,7 +103,7 @@ Integrate with Rails boot process.
 
 ---
 
-## Stage 2: Developer Workflow — Init & Edit 📝
+## [DONE] Stage 2: Developer Workflow — Init & Edit 📝
 
 **Goal:** Provide command-line tools for creating and editing encrypted credential files.
 
@@ -137,7 +137,7 @@ Make it easier to debug issues related to encryption / decryption.
 **Description:**
 - show which key is being used (key can be in SOPS_AGE_KEY, SOPS_AGE_KEY_FILE or config)
 
-#### [IN PROGRESS] 2.2 Rake Task: `sops:edit`
+#### [DONE] 2.2 Rake Task: `sops:edit`
 
 Edit encrypted credentials in user's editor.
 
@@ -182,7 +182,7 @@ Interactive setup wizard for new projects.
 
 ---
 
-#### 2.4 `.sops.yaml` Template Generator
+#### [DONE] 2.4 `.sops.yaml` Template Generator
 
 Generate proper SOPS configuration for Rails projects.
 
@@ -203,15 +203,15 @@ Generate proper SOPS configuration for Rails projects.
 
 ### Stage 2 Definition of Done
 
-- [ ] All acceptance criteria pass
-- [ ] `sops:init` tested on clean project directory
-- [ ] `sops:edit` tested with vim and VS Code
-- [ ] Works without Rails (for standalone testing)
-- [ ] Error messages include actionable solutions
+- [x] All acceptance criteria pass
+- [x] `sops:init` tested on clean project directory
+- [x] `sops:edit` tested with vim and VS Code
+- [?] Works without Rails (for standalone testing) - not tested manually
+- [x] Error messages include actionable solutions
 
 ---
 
-## Stage 3: Team Collaboration — Key Management 👥
+## [IN PROGRESS] Stage 3: Team Collaboration — Key Management 👥
 
 **Goal:** Enable adding and removing team members' age keys with automatic re-encryption.
 
@@ -219,7 +219,7 @@ Generate proper SOPS configuration for Rails projects.
 
 ### Features
 
-#### 3.1 Rake Task: `sops:keys`
+#### [IN PROGRESS] 3.1 Rake Task: `sops:keys`
 
 List all authorized age keys.
 
@@ -238,7 +238,7 @@ List all authorized age keys.
 
 ---
 
-#### 3.2 Rake Task: `sops:addkey PUBLIC_KEY`
+#### [] 3.2 Rake Task: `sops:addkey PUBLIC_KEY`
 
 Add a team member's age public key.
 
@@ -260,7 +260,7 @@ Add a team member's age public key.
 
 ---
 
-#### 3.3 Rake Task: `sops:removekey PUBLIC_KEY`
+#### [] 3.3 Rake Task: `sops:removekey PUBLIC_KEY`
 
 Remove a team member's access.
 
@@ -283,7 +283,7 @@ Remove a team member's access.
 
 ---
 
-#### 3.4 Rake Task: `sops:rotate`
+#### [] 3.4 Rake Task: `sops:rotate`
 
 Re-encrypt all files with current key list.
 
