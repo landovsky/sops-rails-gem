@@ -1,0 +1,47 @@
+---
+description: General project guidelines for sops_rails
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# General Project Guidelines
+
+## Project Structure
+
+```
+sops_rails/
+├── lib/sops_rails/      # Main gem code
+├── spec/                # RSpec tests
+├── docs/implementation/ # Roadmap and architectural decisions
+├── .cursor/rules/       # Cursor AI rules
+└── CLAUDE.md            # AI assistant guidelines
+```
+
+## Key Reference Documents
+
+- **Development Roadmap**: `docs/implementation/00-DEVELOPMENT-ROAD-MAP.md`
+- **Architectural Decisions**: `docs/implementation/01-ARCHITECTURAL-DECISIONS.md`
+- **AI Guidelines**: `CLAUDE.md`
+
+## Verification Before Completion
+
+Always verify implementations are trustworthy:
+
+1. **Tests pass**: `bundle exec rspec`
+2. **Linting passes**: `bundle exec rubocop`
+3. **Documentation exists**: YARD comments on public APIs
+4. **Acceptance criteria met**: Check roadmap for feature requirements
+
+## When Implementing Features
+
+1. Read the relevant section in `00-DEVELOPMENT-ROAD-MAP.md`
+2. Note all acceptance criteria (checkboxes)
+3. Implement with tests
+4. Update `01-ARCHITECTURAL-DECISIONS.md` for significant choices
+5. Verify all criteria pass
+
+## Dependencies
+
+- **Required in dev**: SOPS binary, age binary
+- **Ruby version**: >= 3.2.0
+- **Rails version**: >= 7.0 (for Railtie integration)

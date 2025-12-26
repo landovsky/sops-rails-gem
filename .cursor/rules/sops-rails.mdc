@@ -1,0 +1,102 @@
+---
+description: Development guidelines for the sops_rails Ruby gem
+globs: ["**/*.rb", "**/*.rake", "**/*.gemspec"]
+alwaysApply: true
+---
+
+# sops_rails Development Rules
+
+## Code Documentation Requirements
+
+Every Ruby class and module MUST have a documentation block:
+
+```ruby
+# frozen_string_literal: true
+
+module SopsRails
+  # Brief description of what this class does.
+  #
+  # Longer explanation if needed, covering the "why" and key behaviors.
+  # Include usage examples for public APIs.
+  #
+  # @example Basic usage
+  #   MyClass.new.perform
+  #
+  class MyClass
+  end
+end
+```
+
+## Implementation Workflow
+
+1. **Reference the roadmap** before implementing: `docs/implementation/00-DEVELOPMENT-ROAD-MAP.md`
+2. **Check acceptance criteria** — Each feature has specific requirements to satisfy
+3. **Write tests first** — TDD approach ensures verifiable implementations
+4. **Document architectural decisions** in `docs/implementation/01-ARCHITECTURAL-DECISIONS.md`
+
+## Code Patterns
+
+### Configuration Pattern
+Use a singleton configuration object accessible via `SopsRails.configure`:
+
+```ruby
+SopsRails.configure do |config|
+  config.encrypted_path = "config"
+end
+```
+
+### Error Handling
+Define specific exceptions in `lib/sops_rails/errors.rb`:
+
+```ruby
+module SopsRails
+  class Error < StandardError; end
+  class SopsNotFoundError < Error; end
+  class DecryptionError < Error; end
+end
+```
+
+### Shell Command Execution
+Use `Open3` for subprocess calls to capture stdout, stderr, and exit status:
+
+```ruby
+require "open3"
+
+stdout, stderr, status = Open3.capture3("sops", "-d", file_path)
+raise DecryptionError, stderr unless status.success?
+```
+
+## Testing Requirements
+
+- Write RSpec tests in `spec/` directory
+- Use `describe` for classes/modules, `context` for conditions, `it` for behaviors
+- Integration tests that need SOPS binary should be tagged: `integration: true`
+- Mock external dependencies in unit tests
+
+## File Headers
+
+All Ruby files must start with:
+
+```ruby
+# frozen_string_literal: true
+```
+
+## Naming Conventions
+
+- Classes: `PascalCase` (e.g., `CredentialsReader`)
+- Methods/variables: `snake_case` (e.g., `decrypt_file`)
+- Constants: `SCREAMING_SNAKE_CASE` (e.g., `MINIMUM_VERSION`)
+- Files: `snake_case.rb` matching the class name
+
+## Security Rules
+
+- NEVER write decrypted content to filesystem
+- NEVER log or output secret values
+- ALWAYS validate age public key format before use
+- ALWAYS use `Open3` over backticks for shell commands (captures stderr)
+
+## Commit Guidelines
+
+- Small, focused commits addressing one logical change
+- Reference stage/feature from roadmap when applicable
+- Format: `[Stage X.Y] Brief description of change`
