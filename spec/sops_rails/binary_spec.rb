@@ -3,12 +3,31 @@
 require "spec_helper"
 
 RSpec.describe SopsRails::Binary do
+  before do
+    SopsRails.reset!
+    SopsRails.configure { |c| c.debug_mode = false }
+  end
+
   describe ".available?" do
     context "when SOPS binary is in PATH" do
       it "returns true" do
         allow(Open3).to receive(:capture3).with("which",
                                                 "sops").and_return(["/usr/local/bin/sops", "", double(success?: true)])
         expect(described_class.available?).to be true
+      end
+
+      context "when debug mode is enabled" do
+        before do
+          SopsRails.configure { |c| c.debug_mode = true }
+        end
+
+        it "logs debug information" do
+          allow(Open3).to receive(:capture3)
+            .with("which", "sops")
+            .and_return(["/usr/local/bin/sops", "", double(success?: true)])
+          expect(SopsRails::Debug).to receive(:warn).with("[sops_rails] SOPS binary available: true")
+          described_class.available?
+        end
       end
     end
 
@@ -35,6 +54,20 @@ RSpec.describe SopsRails::Binary do
         allow(Open3).to receive(:capture3).with("sops",
                                                 "--version").and_return(["sops 3.8.1\n", "", double(success?: true)])
         expect(described_class.version).to eq("3.8.1")
+      end
+
+      context "when debug mode is enabled" do
+        before do
+          SopsRails.configure { |c| c.debug_mode = true }
+        end
+
+        it "logs debug information" do
+          allow(Open3).to receive(:capture3).with("sops",
+                                                  "--version").and_return(["sops 3.8.1\n", "", double(success?: true)])
+          expect(SopsRails::Debug).to receive(:warn).with("[sops_rails] Checking SOPS version...")
+          expect(SopsRails::Debug).to receive(:warn).with("[sops_rails] SOPS version: 3.8.1")
+          described_class.version
+        end
       end
 
       it "parses version from different output formats" do
@@ -91,6 +124,36 @@ RSpec.describe SopsRails::Binary do
         allow(Open3).to receive(:capture3).with("sops", "-d",
                                                 file_path).and_return([decrypted_content, "", double(success?: true)])
         expect(described_class.decrypt(file_path)).to eq(decrypted_content)
+      end
+
+      context "when debug mode is enabled" do
+        before do
+          SopsRails.configure { |c| c.debug_mode = true }
+        end
+
+        it "logs debug information" do
+          allow(Open3).to receive(:capture3)
+            .with("sops", "-d", file_path)
+            .and_return([decrypted_content, "", double(success?: true)])
+          expect(SopsRails::Debug).to receive(:warn).with("[sops_rails] Decrypting file: #{file_path}")
+          expect(SopsRails::Debug).to receive(:warn).with("[sops_rails] Executing: sops -d #{file_path}")
+          expect(SopsRails::Debug).to receive(:warn).with("[sops_rails] Decryption successful for: #{file_path}")
+          described_class.decrypt(file_path)
+        end
+
+        context "when decryption fails" do
+          it "logs error information" do
+            stderr = "Error: failed to decrypt"
+            allow(Open3).to receive(:capture3).with("sops", "-d",
+                                                    file_path).and_return(["", stderr, double(success?: false)])
+            expect(SopsRails::Debug).to receive(:warn).with("[sops_rails] Decrypting file: #{file_path}")
+            expect(SopsRails::Debug).to receive(:warn).with("[sops_rails] Executing: sops -d #{file_path}")
+            expect(SopsRails::Debug).to receive(:warn).with("[sops_rails] Decryption failed: #{stderr}")
+            expect do
+              described_class.decrypt(file_path)
+            end.to raise_error(SopsRails::DecryptionError)
+          end
+        end
       end
 
       it "converts file_path to string" do

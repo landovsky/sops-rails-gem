@@ -199,6 +199,41 @@ end
 | `DECRYPTED_SECRETS_PATH` | Path to decrypted secrets in production | `/app/secrets` |
 | `SOPS_AGE_KEY_FILE` | Path to age private key (development) | `~/.config/sops/age/keys.txt` |
 | `SOPS_AGE_KEY` | Age private key contents (alternative to file) | — |
+| `SOPS_RAILS_DEBUG` | Enable debug mode (set to `1`) | — |
+
+### Debug Mode
+
+Enable debug mode to get detailed logging and diagnostic information. Debug output goes to stderr and never includes secret values.
+
+**Enable via configuration:**
+```ruby
+# config/initializers/sops.rb
+Sops.configure do |config|
+  config.debug_mode = true
+end
+```
+
+**Or via environment variable:**
+```bash
+export SOPS_RAILS_DEBUG=1
+```
+
+**Get structured debug information:**
+```ruby
+# In Rails console or code
+SopsRails::Debug.info
+# => {
+#   key_source: "SOPS_AGE_KEY_FILE",
+#   key_file: "/path/to/key.txt",
+#   key_file_exists: true,
+#   sops_version: "3.8.1",
+#   age_available: true,
+#   config: { ... },
+#   credential_files: [ ... ]
+# }
+```
+
+When enabled, the gem logs debug messages to stderr with the `[sops_rails]` prefix, helping troubleshoot key detection, file access, and decryption issues.
 
 ### ENV File Support
 
@@ -923,6 +958,21 @@ Check that:
 Sops.config.decrypted_path  # => "/app/secrets"
 Dir.glob("#{Sops.config.decrypted_path}/*")  # => ["credentials.yaml", ...]
 ```
+
+### Getting diagnostic information
+
+Enable debug mode and use `SopsRails::Debug.info` to get detailed information about your setup:
+
+```ruby
+# Enable debug mode
+SopsRails.configure { |c| c.debug_mode = true }
+
+# Get diagnostic information
+SopsRails::Debug.info
+# Shows: key source, file paths, binary availability, credential file status
+```
+
+This helps identify issues with key detection, file access, or binary availability.
 
 ### Credentials not updating in development
 

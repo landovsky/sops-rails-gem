@@ -130,7 +130,14 @@ Display decrypted credentials in terminal.
 
 ---
 
-#### 2.2 Rake Task: `sops:edit`
+#### [IN PROGRESS] 2.1.1 Add debugging mode
+
+Make it easier to debug issues related to encryption / decryption.
+
+**Description:**
+- show which key is being used (key can be in SOPS_AGE_KEY, SOPS_AGE_KEY_FILE or config)
+
+#### [] 2.2 Rake Task: `sops:edit`
 
 Edit encrypted credentials in user's editor.
 

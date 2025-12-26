@@ -7,6 +7,7 @@ require_relative "sops_rails/errors"
 require_relative "sops_rails/configuration"
 require_relative "sops_rails/binary"
 require_relative "sops_rails/credentials"
+require_relative "sops_rails/debug"
 require_relative "sops_rails/railtie" if defined?(Rails)
 
 # SopsRails provides SOPS encryption support for Rails applications.
@@ -25,8 +26,10 @@ require_relative "sops_rails/railtie" if defined?(Rails)
 #   SopsRails.config.encrypted_path
 #
 module SopsRails
-  # Mutex for thread-safe singleton initialization
-  @mutex = Mutex.new
+  # Mutexes for thread-safe singleton initialization
+  # Using separate mutexes to avoid deadlock when Debug.log calls config from within credentials
+  @config_mutex = Mutex.new
+  @credentials_mutex = Mutex.new
 
   # Configure sops_rails settings using a block.
   #
@@ -41,7 +44,7 @@ module SopsRails
   #   end
   #
   def self.configure(&block)
-    @mutex.synchronize do
+    @config_mutex.synchronize do
       @config ||= Configuration.new
     end
     @config.update(&block) if block
@@ -60,7 +63,7 @@ module SopsRails
   #   SopsRails.config.credential_files # => ["credentials.yaml.enc"]
   #
   def self.config
-    @mutex.synchronize do
+    @config_mutex.synchronize do
       @config ||= Configuration.new
     end
   end
@@ -74,8 +77,10 @@ module SopsRails
   #   SopsRails.config # => new Configuration with defaults
   #
   def self.reset!
-    @mutex.synchronize do
+    @config_mutex.synchronize do
       @config = nil
+    end
+    @credentials_mutex.synchronize do
       @credentials = nil
     end
   end
@@ -101,12 +106,48 @@ module SopsRails
   #
   def self.credentials
     # Get config outside the credentials mutex to avoid deadlock.
-    # The `config` method acquires @mutex internally, so calling it inside
-    # another @mutex.synchronize block would cause a recursive lock.
-    # This is safe because config is itself thread-safe.
+    # Using separate mutexes allows Debug.log to safely call config
+    # from within Credentials.load.
     current_config = config
-    @mutex.synchronize do
+    @credentials_mutex.synchronize do
       @credentials ||= Credentials.load(current_config)
     end
+  end
+
+  # Check if debug mode is currently enabled.
+  #
+  # @return [Boolean] true if debug mode is enabled
+  #
+  # @example
+  #   SopsRails.debug_mode? # => false
+  #   ENV['SOPS_RAILS_DEBUG'] = '1'
+  #   SopsRails.reset!
+  #   SopsRails.debug_mode? # => true
+  #
+  def self.debug_mode?
+    config.debug_mode
+  end
+
+  # Get structured debug information about the current configuration.
+  #
+  # Returns a hash containing key source information, configuration values,
+  # binary availability, and file status. Never includes secret values.
+  #
+  # @return [Hash] Debug information hash with symbol keys
+  #
+  # @example
+  #   SopsRails.debug_info
+  #   # => {
+  #   #   key_source: "SOPS_AGE_KEY_FILE",
+  #   #   key_file: "/path/to/key.txt",
+  #   #   key_file_exists: true,
+  #   #   sops_version: "3.8.1",
+  #   #   age_available: true,
+  #   #   config: { ... },
+  #   #   credential_files: [...]
+  #   # }
+  #
+  def self.debug_info
+    Debug.info
   end
 end

@@ -2,6 +2,8 @@
 
 require "open3"
 
+require_relative "debug"
+
 module SopsRails
   # Interface for interacting with the SOPS command-line binary.
   #
@@ -33,7 +35,9 @@ module SopsRails
       #
       def available?
         stdout, _stderr, status = Open3.capture3("which", "sops")
-        status.success? && !stdout.strip.empty?
+        result = status.success? && !stdout.strip.empty?
+        Debug.log("SOPS binary available: #{result}")
+        result
       end
 
       # Get the version of the installed SOPS binary.
@@ -47,14 +51,11 @@ module SopsRails
       def version
         raise SopsNotFoundError, "sops binary not found in PATH" unless available?
 
+        Debug.log("Checking SOPS version...")
         stdout, stderr, status = Open3.capture3("sops", "--version")
-        raise SopsNotFoundError, "failed to get sops version: #{stderr.strip}" unless status.success?
+        handle_version_error(stderr) unless status.success?
 
-        # Parse version from output like "sops 3.8.1" or "3.8.1"
-        version_match = stdout.match(/(\d+\.\d+\.\d+)/)
-        raise SopsNotFoundError, "unable to parse sops version from: #{stdout.strip}" unless version_match
-
-        version_match[1]
+        parse_version(stdout)
       end
 
       # Decrypt a SOPS-encrypted file and return the decrypted content.
@@ -74,12 +75,45 @@ module SopsRails
       def decrypt(file_path)
         raise SopsNotFoundError, "sops binary not found in PATH" unless available?
 
-        stdout, stderr, status = Open3.capture3("sops", "-d", file_path.to_s)
+        file_path_str = file_path.to_s
+        log_decrypt_start(file_path_str)
+
+        stdout, stderr, status = Open3.capture3("sops", "-d", file_path_str)
+        handle_decrypt_result(file_path, stdout, stderr, status)
+      end
+
+      private
+
+      def handle_version_error(stderr)
+        Debug.log("SOPS version check failed: #{stderr.strip}")
+        raise SopsNotFoundError, "failed to get sops version: #{stderr.strip}"
+      end
+
+      def parse_version(stdout)
+        version_match = stdout.match(/(\d+\.\d+\.\d+)/)
+        unless version_match
+          Debug.log("Unable to parse SOPS version from: #{stdout.strip}")
+          raise SopsNotFoundError, "unable to parse sops version from: #{stdout.strip}"
+        end
+
+        version = version_match[1]
+        Debug.log("SOPS version: #{version}")
+        version
+      end
+
+      def log_decrypt_start(file_path_str)
+        Debug.log("Decrypting file: #{file_path_str}")
+        Debug.log("Executing: sops -d #{file_path_str}")
+      end
+
+      def handle_decrypt_result(file_path, stdout, stderr, status)
         unless status.success?
           error_message = stderr.strip.empty? ? stdout.strip : stderr.strip
+          Debug.log("Decryption failed: #{error_message}")
           raise DecryptionError, "failed to decrypt file #{file_path}: #{error_message}"
         end
 
+        Debug.log("Decryption successful for: #{file_path}")
         stdout
       end
     end

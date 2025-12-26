@@ -28,6 +28,11 @@ module SopsRails
     #     Default: `["credentials.yaml.enc"]`
     attr_accessor :credential_files
 
+    # @!attribute [rw] debug_mode
+    #   @return [Boolean] Whether debug mode is enabled.
+    #     Default: `false` or value from `SOPS_RAILS_DEBUG` environment variable.
+    attr_accessor :debug_mode
+
     # @!attribute [r] age_key_file
     #   @return [String, nil] Path to age private key file.
     #     Read from `SOPS_AGE_KEY_FILE` environment variable.
@@ -52,6 +57,8 @@ module SopsRails
       @credential_files = ["credentials.yaml.enc"]
       @age_key_file = ENV.fetch("SOPS_AGE_KEY_FILE", nil)
       @age_key = ENV.fetch("SOPS_AGE_KEY", nil)
+      debug_env = ENV.fetch("SOPS_RAILS_DEBUG", "")
+      @debug_mode = !debug_env.empty? && debug_env != "0" && debug_env.downcase != "false"
       @mutex = Mutex.new
     end
 

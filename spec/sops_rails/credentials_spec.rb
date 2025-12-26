@@ -1,6 +1,11 @@
 # frozen_string_literal: true
 
 RSpec.describe SopsRails::Credentials do
+  before do
+    SopsRails.reset!
+    SopsRails.configure { |c| c.debug_mode = false }
+  end
+
   after { SopsRails.reset! }
 
   describe ".new" do
@@ -234,6 +239,29 @@ RSpec.describe SopsRails::Credentials do
         expect(creds.aws.access_key_id).to eq("AKIAIOSFODNN7EXAMPLE")
         expect(creds.database.password).to eq("supersecret")
       end
+
+      context "when debug mode is enabled" do
+        before do
+          SopsRails.configure { |c| c.debug_mode = true }
+        end
+
+        it "logs debug information" do
+          # Capture warn output to verify debug messages (must return nil to avoid type errors)
+          logged_messages = []
+          allow(SopsRails::Debug).to receive(:warn) do |msg|
+            logged_messages << msg
+            nil
+          end
+
+          described_class.load
+
+          expect(logged_messages).to include("[sops_rails] Loading credentials from config: config")
+          expect(logged_messages).to include("[sops_rails] Checking file: config/credentials.yaml.enc")
+          expect(logged_messages).to include("[sops_rails] File exists, decrypting: config/credentials.yaml.enc")
+          expect(logged_messages.any? { |m| m.match?(/Loaded \d+ top-level keys/) }).to be true
+          expect(logged_messages.any? { |m| m.match?(/Credentials loaded successfully/) }).to be true
+        end
+      end
     end
 
     context "when file does not exist" do
@@ -244,6 +272,28 @@ RSpec.describe SopsRails::Credentials do
       it "returns empty credentials" do
         creds = described_class.load
         expect(creds).to be_empty
+      end
+
+      context "when debug mode is enabled" do
+        before do
+          SopsRails.configure { |c| c.debug_mode = true }
+        end
+
+        it "logs that file does not exist" do
+          # Capture warn output to verify debug messages (must return nil to avoid type errors)
+          logged_messages = []
+          allow(SopsRails::Debug).to receive(:warn) do |msg|
+            logged_messages << msg
+            nil
+          end
+
+          described_class.load
+
+          expect(logged_messages).to include("[sops_rails] Loading credentials from config: config")
+          expect(logged_messages).to include("[sops_rails] Checking file: config/credentials.yaml.enc")
+          expect(logged_messages).to include("[sops_rails] File does not exist, skipping: config/credentials.yaml.enc")
+          expect(logged_messages.any? { |m| m.match?(/Credentials loaded successfully/) }).to be true
+        end
       end
     end
 

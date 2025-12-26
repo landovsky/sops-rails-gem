@@ -65,11 +65,17 @@ RSpec.describe SopsRails::Configuration do
     around do |example|
       original_age_key_file = ENV.fetch("SOPS_AGE_KEY_FILE", nil)
       original_age_key = ENV.fetch("SOPS_AGE_KEY", nil)
+      original_debug = ENV.fetch("SOPS_RAILS_DEBUG", nil)
 
       example.run
 
       ENV["SOPS_AGE_KEY_FILE"] = original_age_key_file
       ENV["SOPS_AGE_KEY"] = original_age_key
+      if original_debug
+        ENV["SOPS_RAILS_DEBUG"] = original_debug
+      else
+        ENV.delete("SOPS_RAILS_DEBUG")
+      end
     end
 
     it "reads SOPS_AGE_KEY_FILE environment variable" do
@@ -93,6 +99,59 @@ RSpec.describe SopsRails::Configuration do
 
       expect(SopsRails.config.age_key_file).to be_nil
       expect(SopsRails.config.age_key).to be_nil
+    end
+
+    it "reads SOPS_RAILS_DEBUG environment variable" do
+      ENV["SOPS_RAILS_DEBUG"] = "1"
+      SopsRails.reset!
+
+      expect(SopsRails.config.debug_mode).to be true
+    end
+
+    it "treats '0' as false for SOPS_RAILS_DEBUG" do
+      ENV["SOPS_RAILS_DEBUG"] = "0"
+      SopsRails.reset!
+
+      expect(SopsRails.config.debug_mode).to be false
+    end
+
+    it "treats 'false' as false for SOPS_RAILS_DEBUG" do
+      ENV["SOPS_RAILS_DEBUG"] = "false"
+      SopsRails.reset!
+
+      expect(SopsRails.config.debug_mode).to be false
+    end
+
+    it "treats empty string as false for SOPS_RAILS_DEBUG" do
+      ENV["SOPS_RAILS_DEBUG"] = ""
+      SopsRails.reset!
+
+      expect(SopsRails.config.debug_mode).to be false
+    end
+
+    it "defaults to false when SOPS_RAILS_DEBUG is not set" do
+      ENV.delete("SOPS_RAILS_DEBUG")
+      SopsRails.reset!
+
+      expect(SopsRails.config.debug_mode).to be false
+    end
+  end
+
+  describe "debug_mode" do
+    it "allows setting debug_mode via configuration" do
+      SopsRails.configure do |config|
+        config.debug_mode = true
+      end
+
+      expect(SopsRails.config.debug_mode).to be true
+    end
+
+    it "allows disabling debug_mode via configuration" do
+      SopsRails.configure do |config|
+        config.debug_mode = false
+      end
+
+      expect(SopsRails.config.debug_mode).to be false
     end
   end
 

@@ -2,6 +2,8 @@
 
 require "yaml"
 
+require_relative "debug"
+
 module SopsRails
   # Provides OpenStruct-like access to SOPS-encrypted credentials.
   #
@@ -162,18 +164,12 @@ module SopsRails
     #   creds.aws.access_key_id
     #
     def self.load(config = SopsRails.config)
-      data = {}
+      Debug.log("Loading credentials from config: #{config.encrypted_path}")
+      Debug.log("Credential files to check: #{config.credential_files.inspect}")
 
-      config.credential_files.each do |file|
-        file_path = File.join(config.encrypted_path, file)
-        next unless File.exist?(file_path)
+      data = load_and_merge_files(config)
 
-        decrypted_content = Binary.decrypt(file_path)
-        file_data = YAML.safe_load(decrypted_content, permitted_classes: [], permitted_symbols: [],
-                                                      aliases: true) || {}
-        data = deep_merge(data, file_data)
-      end
-
+      Debug.log("Credentials loaded successfully with #{data.keys.size} top-level keys")
       new(data)
     end
 
@@ -211,6 +207,37 @@ module SopsRails
 
     class << self
       private
+
+      def load_and_merge_files(config)
+        data = {}
+        config.credential_files.each do |file|
+          file_data = load_single_file(config.encrypted_path, file)
+          next unless file_data
+
+          data = deep_merge(data, file_data)
+          Debug.log("Merged data, total top-level keys: #{data.keys.size}")
+        end
+        data
+      end
+
+      def load_single_file(encrypted_path, file)
+        file_path = File.join(encrypted_path, file)
+        Debug.log("Checking file: #{file_path}")
+        return log_missing_file(file_path) unless File.exist?(file_path)
+
+        decrypt_and_parse(file_path, file)
+      end
+
+      def log_missing_file(file_path) = Debug.log("File does not exist, skipping: #{file_path}")
+
+      def decrypt_and_parse(file_path, file)
+        Debug.log("File exists, decrypting: #{file_path}")
+        decrypted_content = Binary.decrypt(file_path)
+        file_data = YAML.safe_load(decrypted_content, permitted_classes: [], permitted_symbols: [],
+                                                      aliases: true) || {}
+        Debug.log("Loaded #{file_data.keys.size} top-level keys from #{file}")
+        file_data
+      end
 
       # Deep merge two hashes.
       #
