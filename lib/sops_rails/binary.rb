@@ -84,7 +84,110 @@ module SopsRails
         handle_decrypt_result(file_path, stdout, stderr, status)
       end
 
+      # Edit a SOPS-encrypted file using the native SOPS editor integration.
+      #
+      # Opens the file in the user's preferred editor (determined by $EDITOR
+      # environment variable, with fallback to vim/nano). SOPS automatically
+      # handles decryption before editing and re-encryption after saving.
+      #
+      # If the file doesn't exist, SOPS will create it using the encryption
+      # rules defined in .sops.yaml.
+      #
+      # Uses system() to give the editor full control of stdin/stdout/stderr
+      # for interactive editing.
+      #
+      # @param file_path [String] Path to the encrypted file to edit
+      # @return [Boolean] `true` if edit was successful, `false` if user aborted
+      # @raise [SopsNotFoundError] if SOPS binary is not available
+      #
+      # @example Edit default credentials
+      #   SopsRails::Binary.edit("config/credentials.yaml.enc")
+      #   # => true (if user saved) or false (if user aborted)
+      #
+      def edit(file_path)
+        raise SopsNotFoundError, "sops binary not found in PATH" unless available?
+
+        Debug.log_key_info
+        file_path_str = file_path.to_s
+        Debug.log("Editing file: #{file_path_str}")
+        Debug.log("Executing: sops #{file_path_str}")
+
+        env = build_sops_env
+        system(env, "sops", file_path_str)
+      end
+
+      # Encrypt plain content and write to a file using SOPS.
+      #
+      # Creates a new encrypted file from plain text content. Uses a temporary
+      # file to pass content to SOPS, then writes encrypted output to the target.
+      #
+      # @param file_path [String] Path where the encrypted file will be created
+      # @param content [String] Plain text content to encrypt
+      # @return [Boolean] `true` if encryption succeeded
+      # @raise [SopsNotFoundError] if SOPS binary is not available
+      # @raise [EncryptionError] if encryption fails
+      #
+      # @example Create encrypted credentials file
+      #   SopsRails::Binary.encrypt_to_file("config/credentials.yaml.enc", "secret_key_base: abc123")
+      #   # => true
+      #
+      def encrypt_to_file(file_path, content)
+        raise SopsNotFoundError, "sops binary not found in PATH" unless available?
+
+        Debug.log_key_info
+        file_path_str = file_path.to_s
+        Debug.log("Encrypting content to: #{file_path_str}")
+
+        require "tempfile"
+        encrypt_via_tempfile(file_path_str, content)
+      end
+
       private
+
+      # Encrypt content using a temporary file and write to target.
+      #
+      # @param file_path_str [String] Target file path
+      # @param content [String] Plain content to encrypt
+      # @return [Boolean] true on success
+      # @raise [EncryptionError] if encryption fails
+      #
+      def encrypt_via_tempfile(file_path_str, content)
+        # Determine temp file extension based on target file
+        extension = File.extname(file_path_str).sub(/\.enc$/, "")
+        extension = ".yaml" if extension.empty?
+
+        Tempfile.create(["sops_template", extension]) do |temp|
+          temp.write(content)
+          temp.flush
+
+          Debug.log("Executing: sops -e #{temp.path} > #{file_path_str}")
+          env = build_sops_env
+          stdout, stderr, status = Open3.capture3(env, "sops", "-e", temp.path)
+
+          write_encrypted_output(file_path_str, stdout, stderr, status)
+        end
+      end
+
+      # Process encryption result and write to target file.
+      #
+      # @param file_path_str [String] Target file path
+      # @param stdout [String] Encrypted content from SOPS
+      # @param stderr [String] Error output from SOPS
+      # @param status [Process::Status] Exit status
+      # @return [Boolean] true on success
+      # @raise [EncryptionError] if encryption fails
+      #
+      def write_encrypted_output(file_path_str, stdout, stderr, status) # rubocop:disable Naming/PredicateMethod
+        unless status.success?
+          error_message = stderr.strip.empty? ? stdout.strip : stderr.strip
+          Debug.log("Encryption failed: #{error_message}")
+          raise EncryptionError, "failed to encrypt file #{file_path_str}: #{error_message}"
+        end
+
+        File.write(file_path_str, stdout)
+        Debug.log("Encryption successful: #{file_path_str}")
+        true
+      end
 
       # Build environment variables to pass to SOPS.
       #

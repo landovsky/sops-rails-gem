@@ -130,14 +130,14 @@ Display decrypted credentials in terminal.
 
 ---
 
-#### [IN PROGRESS] 2.1.1 Add debugging mode
+#### [DONE] 2.1.1 Add debugging mode
 
 Make it easier to debug issues related to encryption / decryption.
 
 **Description:**
 - show which key is being used (key can be in SOPS_AGE_KEY, SOPS_AGE_KEY_FILE or config)
 
-#### [] 2.2 Rake Task: `sops:edit`
+#### [IN PROGRESS] 2.2 Rake Task: `sops:edit`
 
 Edit encrypted credentials in user's editor.
 
@@ -636,6 +636,23 @@ Prepare for RubyGems release.
 - [ ] Test suite passes on CI
 - [ ] Gem published and installable
 - [ ] README badges show passing CI
+
+---
+
+## Technical Debt
+
+Items to address when time permits:
+
+### TD-1: Code Duplication in Rake Task Argument Parsing
+
+`SopsShowTask` and `SopsEditTask` modules in `lib/sops_rails/tasks/sops.rake` are nearly identical. The only difference is the task name used in `extract_task_args`. Consider refactoring to a shared base module or extracting a `TaskArgumentParser` class.
+
+**Files affected:**
+- `lib/sops_rails/tasks/sops.rake` (lines ~8-117)
+
+**Suggested approach:**
+- Create `SopsTaskHelper` base module with configurable task name
+- Or extract shared methods and DRY up both modules
 
 ---
 

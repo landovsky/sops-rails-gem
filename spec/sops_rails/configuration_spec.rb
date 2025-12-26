@@ -378,9 +378,9 @@ RSpec.describe SopsRails::Configuration do
         allow(File).to receive(:exist?).and_call_original
         allow(File).to receive(:exist?).with(default_path).and_return(true)
         allow(File).to receive(:foreach).with(default_path)
-          .and_yield("# created: 2024-01-01T00:00:00Z")
-          .and_yield("# public key: age1abcdefghijklmnop")
-          .and_yield("AGE-SECRET-KEY-...")
+                                        .and_yield("# created: 2024-01-01T00:00:00Z")
+                                        .and_yield("# public key: age1abcdefghijklmnop")
+                                        .and_yield("AGE-SECRET-KEY-...")
         expect(SopsRails.config.public_key).to eq("age1abcdefghijklmnop")
       end
     end

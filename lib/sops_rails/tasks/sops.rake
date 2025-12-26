@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "fileutils"
+require "securerandom"
 require "sops_rails"
 require "sops_rails/init"
 
@@ -59,6 +61,92 @@ module SopsShowTask
   end
 end
 
+# Helper module for sops:edit task argument parsing
+module SopsEditTask
+  ENV_FLAGS = ["-e", "--environment"].freeze
+
+  # Default template mimics Rails credentials with secret_key_base.
+  # Note: secret_key_base is generated fresh each time the template is used.
+  def self.credentials_template
+    <<~YAML
+      # Used as the base secret for all MessageVerifiers in Rails, including the one protecting cookies.
+      secret_key_base: #{SecureRandom.hex(64)}
+
+      # Add your application secrets here:
+      # aws:
+      #   access_key_id: your_access_key
+      #   secret_access_key: your_secret_key
+      #
+      # database:
+      #   password: your_db_password
+    YAML
+  end
+
+  class << self
+    # Parse ARGV for file argument and environment flag
+    def parse_args
+      task_args = extract_task_args
+      parse_task_args(task_args)
+    end
+
+    # Resolve file path from arguments
+    def resolve_file_path(file_arg, environment)
+      return file_arg if file_arg && !file_arg.empty?
+      return env_credentials_path(environment) if environment && !environment.empty?
+
+      default_credentials_path
+    end
+
+    # Create initial encrypted file with Rails-like template.
+    # Returns true if file was created, false if it already existed.
+    #
+    # @param file_path [String] Path to create the encrypted file
+    # @return [Boolean] true if file was created, false if it already exists
+    def ensure_template_exists(file_path) # rubocop:disable Naming/PredicateMethod
+      return false if File.exist?(file_path)
+
+      puts "Creating new credentials file: #{file_path}"
+      SopsRails::Binary.encrypt_to_file(file_path, credentials_template)
+      true
+    end
+
+    private
+
+    def extract_task_args
+      ARGV.drop_while { |arg| arg != "sops:edit" }.drop(1)
+    end
+
+    def parse_task_args(task_args)
+      env_idx = task_args.index { |arg| ENV_FLAGS.include?(arg) }
+      environment = env_idx ? task_args[env_idx + 1] : nil
+
+      # Find first positional argument (not a flag or flag value)
+      file_arg = find_positional_arg(task_args, env_idx)
+
+      [file_arg, environment]
+    end
+
+    def find_positional_arg(task_args, env_idx)
+      task_args.each_with_index do |arg, idx|
+        next if arg.start_with?("-")
+        next if env_idx && (idx == env_idx + 1) # Skip environment value
+
+        return arg
+      end
+      nil
+    end
+
+    def env_credentials_path(environment)
+      File.join(SopsRails.config.encrypted_path, "credentials.#{environment}.yaml.enc")
+    end
+
+    def default_credentials_path
+      config = SopsRails.config
+      File.join(config.encrypted_path, config.credential_files.first)
+    end
+  end
+end
+
 namespace :sops do
   desc "Initialize sops-rails in this project (set NON_INTERACTIVE=1 to skip prompts)"
   task :init do
@@ -79,6 +167,26 @@ namespace :sops do
     decrypted_content = SopsRails::Binary.decrypt(file_path)
     $stdout.print decrypted_content
   rescue SopsRails::SopsNotFoundError, SopsRails::DecryptionError => e
+    warn "Error: #{e.message}"
+    exit 1
+  end
+
+  desc "Edit encrypted credentials (usage: sops:edit FILE or sops:edit -e ENVIRONMENT)"
+  task :edit do
+    file_arg, environment = SopsEditTask.parse_args
+    file_path = SopsEditTask.resolve_file_path(file_arg, environment)
+
+    # Create parent directory if it doesn't exist
+    file_dir = File.dirname(file_path)
+    FileUtils.mkdir_p(file_dir) unless File.directory?(file_dir)
+
+    # Create template if file doesn't exist (mimics Rails credentials behavior)
+    SopsEditTask.ensure_template_exists(file_path)
+
+    # Open file in SOPS editor
+    success = SopsRails::Binary.edit(file_path)
+    exit 1 unless success
+  rescue SopsRails::SopsNotFoundError, SopsRails::EncryptionError => e
     warn "Error: #{e.message}"
     exit 1
   end

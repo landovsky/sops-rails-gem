@@ -223,6 +223,172 @@ RSpec.describe SopsRails::Binary do
     end
   end
 
+  describe ".edit" do
+    let(:file_path) { "config/credentials.yaml.enc" }
+
+    context "when SOPS is available" do
+      before do
+        allow(described_class).to receive(:available?).and_return(true)
+      end
+
+      it "calls system with sops and file path" do
+        expect(described_class).to receive(:system).with(anything, "sops", file_path).and_return(true)
+        described_class.edit(file_path)
+      end
+
+      it "returns true when system call succeeds" do
+        allow(described_class).to receive(:system).with(anything, "sops", file_path).and_return(true)
+        expect(described_class.edit(file_path)).to be true
+      end
+
+      it "returns false when system call fails" do
+        allow(described_class).to receive(:system).with(anything, "sops", file_path).and_return(false)
+        expect(described_class.edit(file_path)).to be false
+      end
+
+      it "returns false when user aborts editor" do
+        allow(described_class).to receive(:system).with(anything, "sops", file_path).and_return(false)
+        expect(described_class.edit(file_path)).to be false
+      end
+
+      it "converts file_path to string" do
+        path_obj = double(to_s: file_path)
+        expect(described_class).to receive(:system).with(anything, "sops", file_path).and_return(true)
+        described_class.edit(path_obj)
+      end
+
+      context "when debug mode is enabled" do
+        before do
+          SopsRails.configure { |c| c.debug_mode = true }
+          # Mock file operations for default key path
+          allow(File).to receive(:exist?).and_call_original
+          allow(File).to receive(:exist?).with(SopsRails.config.default_age_key_path).and_return(false)
+        end
+
+        it "logs debug information" do
+          allow(described_class).to receive(:system).with(anything, "sops", file_path).and_return(true)
+          allow(SopsRails::Debug).to receive(:warn)
+          expect(SopsRails::Debug).to receive(:warn).with("[sops_rails] Editing file: #{file_path}")
+          expect(SopsRails::Debug).to receive(:warn).with("[sops_rails] Executing: sops #{file_path}")
+          described_class.edit(file_path)
+        end
+      end
+
+      context "with SOPS_AGE_KEY_FILE environment variable" do
+        let(:key_file) { "/custom/path/keys.txt" }
+
+        before do
+          ENV["SOPS_AGE_KEY_FILE"] = key_file
+          SopsRails.reset!
+          allow(File).to receive(:exist?).with(File.expand_path(key_file)).and_return(true)
+        end
+
+        it "passes SOPS_AGE_KEY_FILE in environment" do
+          expect(described_class).to receive(:system).with(
+            hash_including("SOPS_AGE_KEY_FILE" => File.expand_path(key_file)),
+            "sops",
+            file_path
+          ).and_return(true)
+          described_class.edit(file_path)
+        end
+      end
+
+      context "with SOPS_AGE_KEY environment variable" do
+        let(:age_key) { "AGE-SECRET-KEY-1234567890ABCDEF" }
+
+        before do
+          ENV["SOPS_AGE_KEY"] = age_key
+          SopsRails.reset!
+        end
+
+        it "passes SOPS_AGE_KEY in environment" do
+          expect(described_class).to receive(:system).with(
+            hash_including("SOPS_AGE_KEY" => age_key),
+            "sops",
+            file_path
+          ).and_return(true)
+          described_class.edit(file_path)
+        end
+      end
+    end
+
+    context "when SOPS is not available" do
+      it "raises SopsNotFoundError" do
+        allow(described_class).to receive(:available?).and_return(false)
+        expect do
+          described_class.edit(file_path)
+        end.to raise_error(SopsRails::SopsNotFoundError, /sops binary not found in PATH/)
+      end
+    end
+  end
+
+  describe ".encrypt_to_file" do
+    let(:file_path) { "config/credentials.yaml.enc" }
+    let(:content) { "secret_key_base: abc123\n" }
+    let(:encrypted_content) { "sops_encrypted_content_here" }
+    let(:success_status) { instance_double(Process::Status, success?: true) }
+    let(:failure_status) { instance_double(Process::Status, success?: false) }
+
+    context "when SOPS is available" do
+      before do
+        allow(described_class).to receive(:available?).and_return(true)
+        allow(File).to receive(:write)
+      end
+
+      it "encrypts content via tempfile and writes to target" do
+        allow(Open3).to receive(:capture3).and_return([encrypted_content, "", success_status])
+        expect(File).to receive(:write).with(file_path, encrypted_content)
+        described_class.encrypt_to_file(file_path, content)
+      end
+
+      it "returns true on success" do
+        allow(Open3).to receive(:capture3).and_return([encrypted_content, "", success_status])
+        expect(described_class.encrypt_to_file(file_path, content)).to be true
+      end
+
+      it "calls sops -e with tempfile path" do
+        expect(Open3).to receive(:capture3) do |_env, cmd, flag, temp_path|
+          expect(cmd).to eq("sops")
+          expect(flag).to eq("-e")
+          expect(temp_path).to match(/sops_template.*\.yaml/)
+          [encrypted_content, "", success_status]
+        end
+        described_class.encrypt_to_file(file_path, content)
+      end
+
+      it "raises EncryptionError when SOPS fails" do
+        allow(Open3).to receive(:capture3).and_return(["", "encryption failed", failure_status])
+        expect do
+          described_class.encrypt_to_file(file_path, content)
+        end.to raise_error(SopsRails::EncryptionError, /encryption failed/)
+      end
+
+      context "when debug mode is enabled" do
+        before do
+          SopsRails.configure { |c| c.debug_mode = true }
+          allow(File).to receive(:exist?).and_call_original
+          allow(File).to receive(:exist?).with(SopsRails.config.default_age_key_path).and_return(false)
+        end
+
+        it "logs debug information" do
+          allow(Open3).to receive(:capture3).and_return([encrypted_content, "", success_status])
+          allow(SopsRails::Debug).to receive(:warn)
+          expect(SopsRails::Debug).to receive(:warn).with("[sops_rails] Encrypting content to: #{file_path}")
+          described_class.encrypt_to_file(file_path, content)
+        end
+      end
+    end
+
+    context "when SOPS is not available" do
+      it "raises SopsNotFoundError" do
+        allow(described_class).to receive(:available?).and_return(false)
+        expect do
+          described_class.encrypt_to_file(file_path, content)
+        end.to raise_error(SopsRails::SopsNotFoundError, /sops binary not found in PATH/)
+      end
+    end
+  end
+
   describe "acceptance criteria" do
     describe "SopsRails::Binary.available? returns true when sops is installed" do
       it "returns true when which sops succeeds" do

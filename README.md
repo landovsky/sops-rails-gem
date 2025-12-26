@@ -326,7 +326,7 @@ Next steps:
 
 ### `rails sops:edit [FILE]`
 
-Edit encrypted credentials:
+Edit encrypted credentials in your preferred editor:
 
 ```bash
 # Edit base credentials
@@ -340,7 +340,12 @@ rails sops:edit config/credentials.production.yaml.enc
 rails sops:edit .env.production.enc
 ```
 
-Uses `$EDITOR` (falls back to `vim`, then `nano`).
+**How it works:**
+- Uses `$EDITOR` environment variable (falls back to `vim`, then `nano`)
+- SOPS automatically decrypts the file before opening the editor
+- Saving changes automatically re-encrypts the file
+- Exiting without saving (`:q!` in vim) leaves the file unchanged
+- If the file doesn't exist, SOPS creates it using your `.sops.yaml` configuration
 
 ### `rails sops:show [FILE]`
 

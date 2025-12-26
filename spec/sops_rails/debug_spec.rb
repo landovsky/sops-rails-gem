@@ -135,7 +135,7 @@ RSpec.describe SopsRails::Debug do
           it "logs SOPS_AGE_KEY_FILE as key source with file status and public key" do
             expect(described_class).to receive(:warn).with("[sops_rails] Key source: SOPS_AGE_KEY_FILE").ordered
             expect(described_class).to receive(:warn).with("[sops_rails] Key file: #{expanded_path} " \
-                                                          "(exists: true, readable: true)").ordered
+                                                           "(exists: true, readable: true)").ordered
             expect(described_class).to receive(:warn).with("[sops_rails] Resolved key file: #{expanded_path}").ordered
             expect(described_class).to receive(:warn).with("[sops_rails] Public key: age1testkey123").ordered
             described_class.log_key_info
@@ -150,7 +150,7 @@ RSpec.describe SopsRails::Debug do
           it "logs SOPS_AGE_KEY_FILE as key source with non-existent status" do
             expect(described_class).to receive(:warn).with("[sops_rails] Key source: SOPS_AGE_KEY_FILE").ordered
             expect(described_class).to receive(:warn).with("[sops_rails] Key file: #{expanded_path} " \
-                                                          "(exists: false, readable: false)").ordered
+                                                           "(exists: false, readable: false)").ordered
             expect(described_class).to receive(:warn).with("[sops_rails] Resolved key file: (none)").ordered
             described_class.log_key_info
           end
@@ -183,7 +183,7 @@ RSpec.describe SopsRails::Debug do
         it "logs default_location as key source with file status" do
           expect(described_class).to receive(:warn).with("[sops_rails] Key source: default_location").ordered
           expect(described_class).to receive(:warn).with("[sops_rails] Key file: #{default_age_key_path} " \
-                                                        "(exists: true, readable: true)").ordered
+                                                         "(exists: true, readable: true)").ordered
           expect(described_class).to receive(:warn).with("[sops_rails] Resolved key file: #{default_age_key_path}").ordered
           expect(described_class).to receive(:warn).with("[sops_rails] Public key: age1defaultkey456").ordered
           described_class.log_key_info
