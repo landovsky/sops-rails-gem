@@ -5,6 +5,64 @@ Native [SOPS](https://github.com/getsops/sops) encryption support for Rails appl
 [![Gem Version](https://badge.fury.io/rb/sops-rails.svg)](https://rubygems.org/gems/sops-rails)
 [![CI](https://github.com/your-org/sops-rails/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/sops-rails/actions)
 
+## Table of Contents
+
+- [Why sops-rails?](#why-sops-rails)
+  - [When to use sops-rails](#when-to-use-sops-rails)
+- [Installation](#installation)
+  - [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+  - [1. Initialize sops-rails](#1-initialize-sops-rails)
+  - [2. Edit your credentials](#2-edit-your-credentials)
+  - [3. Access credentials in your app](#3-access-credentials-in-your-app)
+- [How It Works](#how-it-works)
+  - [Development](#development)
+  - [Production](#production)
+- [Configuration](#configuration)
+  - [Basic Configuration](#basic-configuration)
+  - [Environment Variables](#environment-variables)
+  - [Debug Mode](#debug-mode)
+  - [ENV File Support](#env-file-support)
+- [Rake Commands](#rake-commands)
+  - [`rails sops:init`](#rails-sopsinit)
+  - [`rails sops:edit [FILE]`](#rails-sopsedit-file)
+  - [`rails sops:show [FILE]`](#rails-sopsshow-file)
+  - [`rails sops:addkey PUBLIC_KEY [--name NAME]`](#rails-sopsaddkey-public_key---name-name)
+  - [`rails sops:removekey PUBLIC_KEY`](#rails-sopsremovekey-public_key)
+  - [`rails sops:keys`](#rails-sopskeys)
+  - [`rails sops:rotate`](#rails-sopsrotate)
+  - [`rails sops:verify`](#rails-sopsverify)
+- [Usage Examples](#usage-examples)
+  - [Basic Credentials Access](#basic-credentials-access)
+  - [In database.yml](#in-databaseyml)
+  - [In Initializers](#in-initializers)
+  - [Environment-Specific Overrides](#environment-specific-overrides)
+  - [Checking Environment](#checking-environment)
+  - [Rails Credentials Compatibility](#rails-credentials-compatibility)
+- [Deployment Strategies](#deployment-strategies)
+  - [Strategy 1: Kubernetes with Flux SOPS (Recommended)](#strategy-1-kubernetes-with-flux-sops-recommended)
+  - [Strategy 2: Kubernetes Init Container](#strategy-2-kubernetes-init-container)
+  - [Strategy 3: Docker Compose](#strategy-3-docker-compose)
+  - [Strategy 4: Dokku](#strategy-4-dokku)
+  - [Strategy 5: Traditional VPS / Bare Metal](#strategy-5-traditional-vps--bare-metal)
+- [Security Considerations](#security-considerations)
+  - [Design Decisions](#design-decisions)
+  - [Recommendations](#recommendations)
+  - [What sops-rails Does NOT Do](#what-sops-rails-does-not-do)
+- [File Structure](#file-structure)
+  - [`.sops.yaml` Example](#sopsyaml-example)
+- [Troubleshooting](#troubleshooting)
+  - ["sops binary not found"](#sops-binary-not-found)
+  - ["No age identity found"](#no-age-identity-found)
+  - ["Could not decrypt file"](#could-not-decrypt-file)
+  - ["No secrets found in production"](#no-secrets-found-in-production)
+  - [Getting diagnostic information](#getting-diagnostic-information)
+  - [Credentials not updating in development](#credentials-not-updating-in-development)
+- [Migrating from Rails Credentials](#migrating-from-rails-credentials)
+- [Alternatives](#alternatives)
+- [Contributing](#contributing)
+- [License](#license)
+
 ## Why sops-rails?
 
 Rails' built-in encrypted credentials work well for small teams, but they have limitations:
@@ -333,11 +391,11 @@ Edit encrypted credentials in your preferred editor:
 rails sops:edit
 
 # Edit environment-specific credentials
-rails sops:edit -e production
-rails sops:edit config/credentials.production.yaml.enc
+RAILS_ENV=production rails sops:edit
+rails sops:edit[config/credentials.production.yaml.enc]
 
 # Edit env file
-rails sops:edit .env.production.enc
+rails sops:edit[.env.production.enc]
 ```
 
 **How it works:**
@@ -353,7 +411,8 @@ Display decrypted contents without editing:
 
 ```bash
 rails sops:show
-rails sops:show -e production
+RAILS_ENV=production rails sops:show
+rails sops:show[config/credentials.production.yaml.enc]
 ```
 
 ### `rails sops:addkey PUBLIC_KEY [--name NAME]`
