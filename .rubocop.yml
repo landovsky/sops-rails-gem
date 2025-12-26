@@ -1,8 +1,16 @@
 AllCops:
   TargetRubyVersion: 3.2
+  NewCops: enable
+  SuggestExtensions: false
 
 Style/StringLiterals:
   EnforcedStyle: double_quotes
 
 Style/StringLiteralsInInterpolation:
   EnforcedStyle: double_quotes
+
+# RSpec describe/context blocks are naturally large
+Metrics/BlockLength:
+  Exclude:
+    - "spec/**/*_spec.rb"
+    - "*.gemspec"

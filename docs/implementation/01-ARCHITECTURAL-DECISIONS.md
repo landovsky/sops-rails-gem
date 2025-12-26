@@ -7,7 +7,7 @@ This document captures significant architectural decisions made during the devel
 ## ADR-001: Use SOPS Binary via Shell Execution
 
 **Status:** Accepted
-**Date:** 2024-12-26
+**Date:** 2025-12-26
 **Stage:** 1.2 (SOPS Binary Interface)
 
 ### Context
@@ -41,7 +41,7 @@ Use shell execution to the SOPS binary via Ruby's `Open3.capture3`.
 ## ADR-002: Memory-Only Decryption
 
 **Status:** Accepted
-**Date:** 2024-12-26
+**Date:** 2025-12-26
 **Stage:** 1.2 (SOPS Binary Interface)
 
 ### Context
@@ -68,7 +68,7 @@ Never write decrypted content to the filesystem. Capture SOPS stdout directly in
 ## ADR-003: age as Primary Key Format
 
 **Status:** Accepted
-**Date:** 2024-12-26
+**Date:** 2025-12-26
 **Stage:** 1.1 (Configuration Module)
 
 ### Context
@@ -97,7 +97,7 @@ Design primarily around age keys, with other backends as optional/advanced use c
 ## ADR-004: OpenStruct-like Credentials Access
 
 **Status:** Accepted
-**Date:** 2024-12-26
+**Date:** 2025-12-26
 **Stage:** 1.3 (Credentials Reader)
 
 ### Context
@@ -125,7 +125,7 @@ Implement a custom class that allows method chaining (`credentials.aws.access_ke
 ## ADR-005: Lazy Loading of Credentials
 
 **Status:** Accepted
-**Date:** 2024-12-26
+**Date:** 2025-12-26
 **Stage:** 1.3 (Credentials Reader)
 
 ### Context
@@ -153,7 +153,7 @@ Load credentials lazily on first access to `Sops.credentials`.
 ## ADR-006: Production Mode with Pre-Decrypted Files
 
 **Status:** Accepted
-**Date:** 2024-12-26
+**Date:** 2025-12-26
 **Stage:** 4.1 (Production Mode)
 
 ### Context

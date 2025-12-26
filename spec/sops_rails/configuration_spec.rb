@@ -63,8 +63,8 @@ RSpec.describe SopsRails::Configuration do
 
   describe "environment variables" do
     around do |example|
-      original_age_key_file = ENV["SOPS_AGE_KEY_FILE"]
-      original_age_key = ENV["SOPS_AGE_KEY"]
+      original_age_key_file = ENV.fetch("SOPS_AGE_KEY_FILE", nil)
+      original_age_key = ENV.fetch("SOPS_AGE_KEY", nil)
 
       example.run
 

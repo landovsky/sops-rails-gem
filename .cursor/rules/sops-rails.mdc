@@ -123,6 +123,59 @@ All Ruby files must start with:
 - ALWAYS validate age public key format before use
 - ALWAYS use `Open3` over backticks for shell commands (captures stderr)
 
+## Ruby Style Preferences
+
+### Guard Clauses
+Prefer single-line guard clauses over multi-line conditional blocks:
+
+```ruby
+# Good: Guard clause
+raise SopsNotFoundError, "message" unless status.success?
+return nil unless valid?
+
+# Avoid: Multi-line block for simple conditions
+unless status.success?
+  raise SopsNotFoundError, "message"
+end
+```
+
+### Line Length
+Keep lines under 120 characters. For long method chains, break at logical argument boundaries:
+
+```ruby
+# Good: Break at argument boundaries
+allow(Open3).to receive(:capture3).with("sops",
+                                        "--version").and_return(["3.8.1", "", status])
+
+# Avoid: Single line over 120 chars
+```
+
+## RSpec Guidelines
+
+### Block Length
+RSpec `describe`/`context` blocks are naturally large. The `.rubocop.yml` excludes spec files from `Metrics/BlockLength` checks.
+
+### Expectation Blocks
+For expectations that raise errors, prefer `do...end` for multi-line or `{ }` for single-line:
+
+```ruby
+# Good: do...end for multi-line
+expect do
+  described_class.decrypt(file_path)
+end.to raise_error(SopsRails::DecryptionError)
+
+# Good: braces for single line (if under 120 chars)
+expect { described_class.version }.to raise_error(SopsRails::SopsNotFoundError)
+```
+
+### Mocking Open3
+When mocking `Open3.capture3`, break long argument lists across lines:
+
+```ruby
+allow(Open3).to receive(:capture3).with("sops", "-d",
+                                        file_path).and_return([content, "", status])
+```
+
 ## Commit Guidelines
 
 - Small, focused commits addressing one logical change

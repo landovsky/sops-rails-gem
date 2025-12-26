@@ -50,8 +50,8 @@ module SopsRails
     def initialize
       @encrypted_path = "config"
       @credential_files = ["credentials.yaml.enc"]
-      @age_key_file = ENV["SOPS_AGE_KEY_FILE"]
-      @age_key = ENV["SOPS_AGE_KEY"]
+      @age_key_file = ENV.fetch("SOPS_AGE_KEY_FILE", nil)
+      @age_key = ENV.fetch("SOPS_AGE_KEY", nil)
       @mutex = Mutex.new
     end
 
