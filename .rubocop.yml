@@ -15,3 +15,8 @@ Metrics/BlockLength:
     - "spec/**/*_spec.rb"
     - "*.gemspec"
     - "**/*.rake"
+
+# Binary class has multiple core responsibilities (decrypt, encrypt, edit, version)
+Metrics/ClassLength:
+  Exclude:
+    - "lib/sops_rails/binary.rb"

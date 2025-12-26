@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "fileutils"
 require "open3"
 
 require_relative "debug"
@@ -123,6 +124,8 @@ module SopsRails
       #
       # @param file_path [String] Path where the encrypted file will be created
       # @param content [String] Plain text content to encrypt
+      # @param public_key [String, nil] Optional age public key to encrypt for.
+      #   If not provided, extracts from config. If nil, SOPS will use .sops.yaml rules.
       # @return [Boolean] `true` if encryption succeeded
       # @raise [SopsNotFoundError] if SOPS binary is not available
       # @raise [EncryptionError] if encryption fails
@@ -131,60 +134,82 @@ module SopsRails
       #   SopsRails::Binary.encrypt_to_file("config/credentials.yaml.enc", "secret_key_base: abc123")
       #   # => true
       #
-      def encrypt_to_file(file_path, content)
+      # @example Create with explicit public key
+      #   SopsRails::Binary.encrypt_to_file("config/credentials.yaml.enc", "secret_key_base: abc123",
+      #                                      public_key: "age1...")
+      #   # => true
+      #
+      def encrypt_to_file(file_path, content, public_key: nil)
         raise SopsNotFoundError, "sops binary not found in PATH" unless available?
 
         Debug.log_key_info
         file_path_str = file_path.to_s
         Debug.log("Encrypting content to: #{file_path_str}")
 
+        # Auto-detect public key if not explicitly provided
+        public_key ||= SopsRails.config.public_key
+
         require "tempfile"
-        encrypt_via_tempfile(file_path_str, content)
+        encrypt_via_tempfile(file_path_str, content, public_key)
       end
 
       private
 
-      # Encrypt content using a temporary file and write to target.
+      # Encrypt content and write to target file using in-place encryption.
+      #
+      # Writes plain content to target file, then uses SOPS in-place encryption
+      # to encrypt the file. This ensures proper SOPS metadata is preserved.
       #
       # @param file_path_str [String] Target file path
       # @param content [String] Plain content to encrypt
+      # @param public_key [String, nil] Optional age public key to encrypt for
       # @return [Boolean] true on success
       # @raise [EncryptionError] if encryption fails
       #
-      def encrypt_via_tempfile(file_path_str, content)
-        # Determine temp file extension based on target file
-        extension = File.extname(file_path_str).sub(/\.enc$/, "")
-        extension = ".yaml" if extension.empty?
+      def encrypt_via_tempfile(file_path_str, content, public_key)
+        # Write plain content to target file first
+        File.write(file_path_str, content)
 
-        Tempfile.create(["sops_template", extension]) do |temp|
-          temp.write(content)
-          temp.flush
+        # Build SOPS command for in-place encryption
+        sops_args = build_encrypt_command(public_key, file_path_str)
+        Debug.log("Executing: #{sops_args.join(" ")}")
 
-          Debug.log("Executing: sops -e #{temp.path} > #{file_path_str}")
-          env = build_sops_env
-          stdout, stderr, status = Open3.capture3(env, "sops", "-e", temp.path)
-
-          write_encrypted_output(file_path_str, stdout, stderr, status)
-        end
+        env = build_sops_env
+        stdout, stderr, status = Open3.capture3(env, *sops_args)
+        handle_encryption_result(file_path_str, stdout, stderr, status)
       end
 
-      # Process encryption result and write to target file.
+      # Build the SOPS encryption command arguments for in-place encryption.
+      #
+      # @param public_key [String, nil] Optional age public key
+      # @param file_path [String] Path to file to encrypt
+      # @return [Array<String>] Command arguments
+      #
+      def build_encrypt_command(public_key, file_path)
+        args = ["sops", "-e", "-i"]
+        args.push("--age", public_key) if public_key
+        args.push(file_path)
+        args
+      end
+
+      # Handle encryption result.
       #
       # @param file_path_str [String] Target file path
-      # @param stdout [String] Encrypted content from SOPS
+      # @param stdout [String] SOPS stdout
       # @param stderr [String] Error output from SOPS
       # @param status [Process::Status] Exit status
       # @return [Boolean] true on success
       # @raise [EncryptionError] if encryption fails
       #
-      def write_encrypted_output(file_path_str, stdout, stderr, status) # rubocop:disable Naming/PredicateMethod
+      def handle_encryption_result(file_path_str, stdout, stderr, status) # rubocop:disable Naming/PredicateMethod
         unless status.success?
           error_message = stderr.strip.empty? ? stdout.strip : stderr.strip
           Debug.log("Encryption failed: #{error_message}")
+          # Clean up the unencrypted file on failure
+          FileUtils.rm_f(file_path_str)
           raise EncryptionError, "failed to encrypt file #{file_path_str}: #{error_message}"
         end
 
-        File.write(file_path_str, stdout)
         Debug.log("Encryption successful: #{file_path_str}")
         true
       end

@@ -335,25 +335,87 @@ RSpec.describe SopsRails::Binary do
         allow(File).to receive(:write)
       end
 
-      it "encrypts content via tempfile and writes to target" do
-        allow(Open3).to receive(:capture3).and_return([encrypted_content, "", success_status])
-        expect(File).to receive(:write).with(file_path, encrypted_content)
+      it "writes plain content to target file before encrypting in-place" do
+        allow(Open3).to receive(:capture3).and_return(["", "", success_status])
+        expect(File).to receive(:write).with(file_path, content)
         described_class.encrypt_to_file(file_path, content)
       end
 
       it "returns true on success" do
-        allow(Open3).to receive(:capture3).and_return([encrypted_content, "", success_status])
+        allow(Open3).to receive(:capture3).and_return(["", "", success_status])
         expect(described_class.encrypt_to_file(file_path, content)).to be true
       end
 
-      it "calls sops -e with tempfile path" do
-        expect(Open3).to receive(:capture3) do |_env, cmd, flag, temp_path|
-          expect(cmd).to eq("sops")
-          expect(flag).to eq("-e")
-          expect(temp_path).to match(/sops_template.*\.yaml/)
-          [encrypted_content, "", success_status]
+      it "calls sops -e -i with target file path for in-place encryption" do
+        # Ensure no public key is available for this test
+        allow(SopsRails.config).to receive(:public_key).and_return(nil)
+        expect(Open3).to receive(:capture3) do |_env, *args|
+          expect(args.size).to eq(4) # ["sops", "-e", "-i", file_path]
+          expect(args[0]).to eq("sops")
+          expect(args[1]).to eq("-e")
+          expect(args[2]).to eq("-i")
+          expect(args[3]).to eq(file_path)
+          ["", "", success_status]
         end
         described_class.encrypt_to_file(file_path, content)
+      end
+
+      context "when public key is available" do
+        let(:public_key) { "age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq" }
+        let(:key_file_path) { "/Users/test/.config/sops/age/keys.txt" }
+
+        before do
+          # Mock the configuration to return a public key
+          allow(SopsRails.config).to receive(:public_key).and_return(public_key)
+        end
+
+        it "includes --age flag with public key in sops command" do
+          expect(Open3).to receive(:capture3) do |_env, *args|
+            expect(args.size).to eq(6) # ["sops", "-e", "-i", "--age", public_key, file_path]
+            expect(args[0]).to eq("sops")
+            expect(args[1]).to eq("-e")
+            expect(args[2]).to eq("-i")
+            expect(args[3]).to eq("--age")
+            expect(args[4]).to eq(public_key)
+            expect(args[5]).to eq(file_path)
+            ["", "", success_status]
+          end
+          described_class.encrypt_to_file(file_path, content)
+        end
+
+        it "passes public_key explicitly if provided" do
+          custom_key = "age1customkeyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+          expect(Open3).to receive(:capture3) do |_env, *args|
+            expect(args.size).to eq(6) # ["sops", "-e", "-i", "--age", custom_key, file_path]
+            expect(args[0]).to eq("sops")
+            expect(args[1]).to eq("-e")
+            expect(args[2]).to eq("-i")
+            expect(args[3]).to eq("--age")
+            expect(args[4]).to eq(custom_key)
+            expect(args[5]).to eq(file_path)
+            ["", "", success_status]
+          end
+          described_class.encrypt_to_file(file_path, content, public_key: custom_key)
+        end
+      end
+
+      context "when public key is not available" do
+        before do
+          allow(SopsRails.config).to receive(:public_key).and_return(nil)
+        end
+
+        it "calls sops without --age flag (relies on .sops.yaml)" do
+          expect(Open3).to receive(:capture3) do |_env, *args|
+            expect(args.size).to eq(4) # ["sops", "-e", "-i", file_path]
+            expect(args[0]).to eq("sops")
+            expect(args[1]).to eq("-e")
+            expect(args[2]).to eq("-i")
+            expect(args[3]).to eq(file_path)
+            expect(args).not_to include("--age")
+            ["", "", success_status]
+          end
+          described_class.encrypt_to_file(file_path, content)
+        end
       end
 
       it "raises EncryptionError when SOPS fails" do
