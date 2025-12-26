@@ -75,14 +75,38 @@ module SopsRails
       def decrypt(file_path)
         raise SopsNotFoundError, "sops binary not found in PATH" unless available?
 
+        Debug.log_key_info
         file_path_str = file_path.to_s
         log_decrypt_start(file_path_str)
 
-        stdout, stderr, status = Open3.capture3("sops", "-d", file_path_str)
+        env = build_sops_env
+        stdout, stderr, status = Open3.capture3(env, "sops", "-d", file_path_str)
         handle_decrypt_result(file_path, stdout, stderr, status)
       end
 
       private
+
+      # Build environment variables to pass to SOPS.
+      #
+      # Sets SOPS_AGE_KEY_FILE if a resolved key file is available,
+      # ensuring SOPS uses the same key we detected.
+      #
+      # @return [Hash] Environment variables for SOPS subprocess
+      #
+      def build_sops_env
+        env = {}
+        config = SopsRails.config
+
+        # Pass inline key if available
+        env["SOPS_AGE_KEY"] = config.age_key if config.age_key
+
+        # Pass resolved key file path
+        key_file = config.resolved_age_key_file
+        env["SOPS_AGE_KEY_FILE"] = key_file if key_file
+
+        Debug.log("SOPS env: SOPS_AGE_KEY_FILE=#{key_file || "(not set)"}") if key_file || config.age_key.nil?
+        env
+      end
 
       def handle_version_error(stderr)
         Debug.log("SOPS version check failed: #{stderr.strip}")

@@ -109,7 +109,7 @@ RSpec.describe SopsRails::Init do
   end
 
   describe ".ensure_age_key" do
-    let(:age_keys_path) { SopsRails::Init::AGE_KEYS_PATH }
+    let(:age_keys_path) { described_class.age_keys_path }
     let(:keys_dir) { File.dirname(age_keys_path) }
     let(:public_key) { "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" }
     let(:keys_content) do

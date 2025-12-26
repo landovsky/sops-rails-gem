@@ -1,7 +1,27 @@
 # frozen_string_literal: true
 
 RSpec.describe SopsRails do
-  before do
+  # Store original env vars and restore after all tests
+  around do |example|
+    original_debug = ENV.fetch("SOPS_RAILS_DEBUG", nil)
+    original_age_key = ENV.fetch("SOPS_AGE_KEY", nil)
+    original_age_key_file = ENV.fetch("SOPS_AGE_KEY_FILE", nil)
+
+    # Clear env vars for isolation
+    ENV.delete("SOPS_RAILS_DEBUG")
+    ENV.delete("SOPS_AGE_KEY")
+    ENV.delete("SOPS_AGE_KEY_FILE")
+    SopsRails.reset!
+
+    example.run
+
+    # Restore
+    ENV["SOPS_RAILS_DEBUG"] = original_debug if original_debug
+    ENV["SOPS_AGE_KEY"] = original_age_key if original_age_key
+    ENV["SOPS_AGE_KEY_FILE"] = original_age_key_file if original_age_key_file
+    ENV.delete("SOPS_RAILS_DEBUG") unless original_debug
+    ENV.delete("SOPS_AGE_KEY") unless original_age_key
+    ENV.delete("SOPS_AGE_KEY_FILE") unless original_age_key_file
     SopsRails.reset!
   end
 
@@ -25,6 +45,9 @@ RSpec.describe SopsRails do
       allow(SopsRails::Binary).to receive(:available?).and_return(true)
       allow(SopsRails::Binary).to receive(:version).and_return("3.8.1")
       allow(Open3).to receive(:capture3).with("which", "age").and_return(["/usr/bin/age", "", double(success?: true)])
+      # Mock default key path to not exist
+      allow(File).to receive(:exist?).and_call_original
+      allow(File).to receive(:exist?).with(SopsRails.config.default_age_key_path).and_return(false)
     end
 
     it "returns debug information hash" do

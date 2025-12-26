@@ -20,8 +20,14 @@ module SopsRails
   #   SopsRails::Init.run(non_interactive: true)
   #
   class Init
-    # Standard location for age keys
-    AGE_KEYS_PATH = File.expand_path("~/.config/sops/age/keys.txt").freeze
+    # Get the OS-specific default path for age keys.
+    # Delegates to Configuration to ensure consistency.
+    #
+    # @return [String] Expanded path to default age key location
+    #
+    def self.age_keys_path
+      SopsRails.config.default_age_key_path
+    end
 
     # Gitignore entries to add
     GITIGNORE_ENTRIES = [
@@ -120,26 +126,28 @@ module SopsRails
       # @raise [AgeNotFoundError] if age binary is not available
       #
       def ensure_age_key(non_interactive: false)
-        if File.exist?(AGE_KEYS_PATH)
-          puts "✓ Age key found at #{AGE_KEYS_PATH}"
-          return extract_public_key(AGE_KEYS_PATH)
+        keys_path = age_keys_path
+
+        if File.exist?(keys_path)
+          puts "✓ Age key found at #{keys_path}"
+          return extract_public_key(keys_path)
         end
 
         puts "Age key not found. Generating new key pair..." unless non_interactive
 
         # Create directory if it doesn't exist
-        key_dir = File.dirname(AGE_KEYS_PATH)
+        key_dir = File.dirname(keys_path)
         FileUtils.mkdir_p(key_dir)
 
         # Generate key using age-keygen
-        _, stderr, status = Open3.capture3("age-keygen", "-o", AGE_KEYS_PATH)
+        _, stderr, status = Open3.capture3("age-keygen", "-o", keys_path)
         unless status.success?
           raise AgeNotFoundError,
                 "Failed to generate age key: #{stderr.strip}"
         end
 
-        puts "✓ Generated age key at #{AGE_KEYS_PATH}"
-        extract_public_key(AGE_KEYS_PATH)
+        puts "✓ Generated age key at #{keys_path}"
+        extract_public_key(keys_path)
       end
 
       # Extract public key from age keys file.

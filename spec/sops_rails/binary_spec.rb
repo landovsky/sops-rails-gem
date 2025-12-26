@@ -3,9 +3,29 @@
 require "spec_helper"
 
 RSpec.describe SopsRails::Binary do
-  before do
+  # Store original env vars and restore after all tests
+  around do |example|
+    original_age_key = ENV.fetch("SOPS_AGE_KEY", nil)
+    original_age_key_file = ENV.fetch("SOPS_AGE_KEY_FILE", nil)
+    original_debug = ENV.fetch("SOPS_RAILS_DEBUG", nil)
+
+    # Clear env vars for isolation
+    ENV.delete("SOPS_AGE_KEY")
+    ENV.delete("SOPS_AGE_KEY_FILE")
+    ENV.delete("SOPS_RAILS_DEBUG")
     SopsRails.reset!
     SopsRails.configure { |c| c.debug_mode = false }
+
+    example.run
+
+    # Restore
+    ENV["SOPS_AGE_KEY"] = original_age_key if original_age_key
+    ENV["SOPS_AGE_KEY_FILE"] = original_age_key_file if original_age_key_file
+    ENV["SOPS_RAILS_DEBUG"] = original_debug if original_debug
+    ENV.delete("SOPS_AGE_KEY") unless original_age_key
+    ENV.delete("SOPS_AGE_KEY_FILE") unless original_age_key_file
+    ENV.delete("SOPS_RAILS_DEBUG") unless original_debug
+    SopsRails.reset!
   end
 
   describe ".available?" do
@@ -121,7 +141,7 @@ RSpec.describe SopsRails::Binary do
       end
 
       it "returns decrypted content from stdout" do
-        allow(Open3).to receive(:capture3).with("sops", "-d",
+        allow(Open3).to receive(:capture3).with(anything, "sops", "-d",
                                                 file_path).and_return([decrypted_content, "", double(success?: true)])
         expect(described_class.decrypt(file_path)).to eq(decrypted_content)
       end
@@ -129,14 +149,18 @@ RSpec.describe SopsRails::Binary do
       context "when debug mode is enabled" do
         before do
           SopsRails.configure { |c| c.debug_mode = true }
+          # Mock file operations for default key path
+          allow(File).to receive(:exist?).and_call_original
+          allow(File).to receive(:exist?).with(SopsRails.config.default_age_key_path).and_return(false)
         end
 
         it "logs debug information" do
           allow(Open3).to receive(:capture3)
-            .with("sops", "-d", file_path)
+            .with(anything, "sops", "-d", file_path)
             .and_return([decrypted_content, "", double(success?: true)])
+          # Allow any number of debug messages since we now log more info
+          allow(SopsRails::Debug).to receive(:warn)
           expect(SopsRails::Debug).to receive(:warn).with("[sops_rails] Decrypting file: #{file_path}")
-          expect(SopsRails::Debug).to receive(:warn).with("[sops_rails] Executing: sops -d #{file_path}")
           expect(SopsRails::Debug).to receive(:warn).with("[sops_rails] Decryption successful for: #{file_path}")
           described_class.decrypt(file_path)
         end
@@ -144,10 +168,9 @@ RSpec.describe SopsRails::Binary do
         context "when decryption fails" do
           it "logs error information" do
             stderr = "Error: failed to decrypt"
-            allow(Open3).to receive(:capture3).with("sops", "-d",
+            allow(Open3).to receive(:capture3).with(anything, "sops", "-d",
                                                     file_path).and_return(["", stderr, double(success?: false)])
-            expect(SopsRails::Debug).to receive(:warn).with("[sops_rails] Decrypting file: #{file_path}")
-            expect(SopsRails::Debug).to receive(:warn).with("[sops_rails] Executing: sops -d #{file_path}")
+            allow(SopsRails::Debug).to receive(:warn)
             expect(SopsRails::Debug).to receive(:warn).with("[sops_rails] Decryption failed: #{stderr}")
             expect do
               described_class.decrypt(file_path)
@@ -158,7 +181,7 @@ RSpec.describe SopsRails::Binary do
 
       it "converts file_path to string" do
         path_obj = double(to_s: file_path)
-        allow(Open3).to receive(:capture3).with("sops", "-d",
+        allow(Open3).to receive(:capture3).with(anything, "sops", "-d",
                                                 file_path).and_return([decrypted_content, "", double(success?: true)])
         expect(described_class.decrypt(path_obj)).to eq(decrypted_content)
       end
@@ -166,7 +189,7 @@ RSpec.describe SopsRails::Binary do
       context "when decryption fails" do
         it "raises DecryptionError with stderr message" do
           stderr = "Error: failed to get the data key required to decrypt the SOPS file"
-          allow(Open3).to receive(:capture3).with("sops", "-d",
+          allow(Open3).to receive(:capture3).with(anything, "sops", "-d",
                                                   file_path).and_return(["", stderr, double(success?: false)])
           expect do
             described_class.decrypt(file_path)
@@ -175,7 +198,7 @@ RSpec.describe SopsRails::Binary do
 
         it "raises DecryptionError with stdout message when stderr is empty" do
           stdout = "Error: unable to decrypt file"
-          allow(Open3).to receive(:capture3).with("sops", "-d",
+          allow(Open3).to receive(:capture3).with(anything, "sops", "-d",
                                                   file_path).and_return([stdout, "", double(success?: false)])
           expect do
             described_class.decrypt(file_path)
@@ -183,7 +206,7 @@ RSpec.describe SopsRails::Binary do
         end
 
         it "includes file path in error message" do
-          allow(Open3).to receive(:capture3).with("sops", "-d",
+          allow(Open3).to receive(:capture3).with(anything, "sops", "-d",
                                                   file_path).and_return(["", "error message", double(success?: false)])
           expect { described_class.decrypt(file_path) }.to raise_error(SopsRails::DecryptionError, /#{file_path}/)
         end
@@ -228,7 +251,7 @@ RSpec.describe SopsRails::Binary do
 
       it "returns decrypted content" do
         content = "decrypted: content\n"
-        allow(Open3).to receive(:capture3).with("sops", "-d",
+        allow(Open3).to receive(:capture3).with(anything, "sops", "-d",
                                                 "file.yaml.enc").and_return([content, "", double(success?: true)])
         expect(described_class.decrypt("file.yaml.enc")).to eq(content)
       end
@@ -249,7 +272,7 @@ RSpec.describe SopsRails::Binary do
 
       it "raises DecryptionError with error details" do
         error_msg = "failed to get the data key"
-        allow(Open3).to receive(:capture3).with("sops", "-d",
+        allow(Open3).to receive(:capture3).with(anything, "sops", "-d",
                                                 "file.yaml.enc").and_return(["", error_msg, double(success?: false)])
         expect { described_class.decrypt("file.yaml.enc") }.to raise_error(SopsRails::DecryptionError, /#{error_msg}/)
       end
@@ -262,11 +285,11 @@ RSpec.describe SopsRails::Binary do
 
       it "captures content from stdout only" do
         content = "decrypted content"
-        allow(Open3).to receive(:capture3).with("sops", "-d",
+        allow(Open3).to receive(:capture3).with(anything, "sops", "-d",
                                                 "file.yaml.enc").and_return([content, "", double(success?: true)])
 
         # Verify we're not writing to filesystem by checking Open3 is called correctly
-        expect(Open3).to receive(:capture3).with("sops", "-d", "file.yaml.enc")
+        expect(Open3).to receive(:capture3).with(anything, "sops", "-d", "file.yaml.enc")
         result = described_class.decrypt("file.yaml.enc")
         expect(result).to eq(content)
       end

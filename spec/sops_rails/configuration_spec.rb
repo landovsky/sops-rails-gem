@@ -101,6 +101,20 @@ RSpec.describe SopsRails::Configuration do
       expect(SopsRails.config.age_key).to be_nil
     end
 
+    it "treats empty string as nil for SOPS_AGE_KEY_FILE" do
+      ENV["SOPS_AGE_KEY_FILE"] = ""
+      SopsRails.reset!
+
+      expect(SopsRails.config.age_key_file).to be_nil
+    end
+
+    it "treats empty string as nil for SOPS_AGE_KEY" do
+      ENV["SOPS_AGE_KEY"] = ""
+      SopsRails.reset!
+
+      expect(SopsRails.config.age_key).to be_nil
+    end
+
     it "reads SOPS_RAILS_DEBUG environment variable" do
       ENV["SOPS_RAILS_DEBUG"] = "1"
       SopsRails.reset!
@@ -273,6 +287,111 @@ RSpec.describe SopsRails::Configuration do
 
       expect(config1).to be(config2)
       expect(config2).to be(config3)
+    end
+  end
+
+  describe "#default_age_key_path" do
+    it "returns OS-specific path for macOS" do
+      allow(SopsRails.config).to receive(:macos?).and_return(true)
+      expected = File.expand_path("~/Library/Application Support/sops/age/keys.txt")
+      expect(SopsRails.config.default_age_key_path).to eq(expected)
+    end
+
+    it "returns XDG path for non-macOS" do
+      allow(SopsRails.config).to receive(:macos?).and_return(false)
+      expected = File.expand_path("~/.config/sops/age/keys.txt")
+      expect(SopsRails.config.default_age_key_path).to eq(expected)
+    end
+  end
+
+  describe "#resolved_age_key_file" do
+    around do |example|
+      original_age_key = ENV.fetch("SOPS_AGE_KEY", nil)
+      original_age_key_file = ENV.fetch("SOPS_AGE_KEY_FILE", nil)
+      ENV.delete("SOPS_AGE_KEY")
+      ENV.delete("SOPS_AGE_KEY_FILE")
+      SopsRails.reset!
+      example.run
+      ENV["SOPS_AGE_KEY"] = original_age_key if original_age_key
+      ENV["SOPS_AGE_KEY_FILE"] = original_age_key_file if original_age_key_file
+      ENV.delete("SOPS_AGE_KEY") unless original_age_key
+      ENV.delete("SOPS_AGE_KEY_FILE") unless original_age_key_file
+      SopsRails.reset!
+    end
+
+    context "when SOPS_AGE_KEY is set" do
+      it "returns nil (inline key doesn't need a file)" do
+        ENV["SOPS_AGE_KEY"] = "AGE-SECRET-KEY-1ABC123"
+        SopsRails.reset!
+        expect(SopsRails.config.resolved_age_key_file).to be_nil
+      end
+    end
+
+    context "when SOPS_AGE_KEY_FILE is set to existing file" do
+      it "returns the expanded path" do
+        ENV["SOPS_AGE_KEY_FILE"] = "/path/to/key.txt"
+        SopsRails.reset!
+        expanded = File.expand_path("/path/to/key.txt")
+        allow(File).to receive(:exist?).and_call_original
+        allow(File).to receive(:exist?).with(expanded).and_return(true)
+        expect(SopsRails.config.resolved_age_key_file).to eq(expanded)
+      end
+    end
+
+    context "when SOPS_AGE_KEY_FILE is set to non-existing file" do
+      it "falls back to default location" do
+        ENV["SOPS_AGE_KEY_FILE"] = "/nonexistent/key.txt"
+        SopsRails.reset!
+        expanded = File.expand_path("/nonexistent/key.txt")
+        default_path = SopsRails.config.default_age_key_path
+        allow(File).to receive(:exist?).and_call_original
+        allow(File).to receive(:exist?).with(expanded).and_return(false)
+        allow(File).to receive(:exist?).with(default_path).and_return(true)
+        expect(SopsRails.config.resolved_age_key_file).to eq(default_path)
+      end
+    end
+
+    context "when no key file is found" do
+      it "returns nil" do
+        default_path = SopsRails.config.default_age_key_path
+        allow(File).to receive(:exist?).and_call_original
+        allow(File).to receive(:exist?).with(default_path).and_return(false)
+        expect(SopsRails.config.resolved_age_key_file).to be_nil
+      end
+    end
+  end
+
+  describe "#public_key" do
+    around do |example|
+      original_age_key_file = ENV.fetch("SOPS_AGE_KEY_FILE", nil)
+      ENV.delete("SOPS_AGE_KEY_FILE")
+      SopsRails.reset!
+      example.run
+      ENV["SOPS_AGE_KEY_FILE"] = original_age_key_file if original_age_key_file
+      ENV.delete("SOPS_AGE_KEY_FILE") unless original_age_key_file
+      SopsRails.reset!
+    end
+
+    context "when key file exists with public key comment" do
+      it "extracts the public key" do
+        default_path = SopsRails.config.default_age_key_path
+        allow(File).to receive(:exist?).and_call_original
+        allow(File).to receive(:exist?).with(default_path).and_return(true)
+        allow(File).to receive(:foreach).with(default_path)
+          .and_yield("# created: 2024-01-01T00:00:00Z")
+          .and_yield("# public key: age1abcdefghijklmnop")
+          .and_yield("AGE-SECRET-KEY-...")
+        expect(SopsRails.config.public_key).to eq("age1abcdefghijklmnop")
+      end
+    end
+
+    context "when key file does not exist" do
+      it "returns nil" do
+        default_path = SopsRails.config.default_age_key_path
+        allow(File).to receive(:exist?).and_call_original
+        allow(File).to receive(:exist?).with(default_path).and_return(false)
+        expect(SopsRails.config.public_key).to be_nil
+      end
     end
   end
 end
