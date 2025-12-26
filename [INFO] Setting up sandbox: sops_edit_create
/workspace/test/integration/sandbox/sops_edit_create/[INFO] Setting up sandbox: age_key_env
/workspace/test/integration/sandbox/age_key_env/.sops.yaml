@@ -1,0 +1,4 @@
+creation_rules:
+  - path_regex: config/credentials.*\.yaml\.enc$
+    age:
+      - age1zg7yw9l0l83gnte8hgupdzdcael7cql3njmhzmnqwxggkm0n79nqcjtx72

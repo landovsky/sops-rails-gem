@@ -187,11 +187,11 @@ module SopsRails
           "creation_rules" => [
             {
               "path_regex" => "config/credentials(\\..*)?\\.yaml\\.enc$",
-              "age" => [public_key]
+              "age" => public_key
             },
             {
               "path_regex" => "\\.env(\\..*)?\\.enc$",
-              "age" => [public_key]
+              "age" => public_key
             },
             {
               "path_regex" => ".*",
