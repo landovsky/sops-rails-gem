@@ -111,7 +111,7 @@ Integrate with Rails boot process.
 
 ### Features
 
-#### 2.1 Rake Task: `sops:show`
+#### [IN PROGRESS] 2.1 Rake Task: `sops:show`
 
 Display decrypted credentials in terminal.
 
@@ -150,7 +150,7 @@ Edit encrypted credentials in user's editor.
 
 ---
 
-#### 2.3 Rake Task: `sops:init`
+#### [DONE] 2.3 Rake Task: `sops:init`
 
 Interactive setup wizard for new projects.
 
