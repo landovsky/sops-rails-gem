@@ -347,6 +347,8 @@ RSpec.describe SopsRails::Binary do
       end
 
       it "calls sops -e with tempfile path" do
+        # Ensure no public key is available for this test
+        allow(SopsRails.config).to receive(:public_key).and_return(nil)
         expect(Open3).to receive(:capture3) do |_env, cmd, flag, temp_path|
           expect(cmd).to eq("sops")
           expect(flag).to eq("-e")
@@ -354,6 +356,61 @@ RSpec.describe SopsRails::Binary do
           [encrypted_content, "", success_status]
         end
         described_class.encrypt_to_file(file_path, content)
+      end
+
+      context "when public key is available" do
+        let(:public_key) { "age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq" }
+        let(:key_file_path) { "/Users/test/.config/sops/age/keys.txt" }
+
+        before do
+          # Mock the configuration to return a public key
+          allow(SopsRails.config).to receive(:public_key).and_return(public_key)
+        end
+
+        it "includes --age flag with public key in sops command" do
+          expect(Open3).to receive(:capture3) do |_env, *args|
+            expect(args.size).to eq(5) # ["sops", "-e", "--age", public_key, temp_path]
+            expect(args[0]).to eq("sops")
+            expect(args[1]).to eq("-e")
+            expect(args[2]).to eq("--age")
+            expect(args[3]).to eq(public_key)
+            expect(args[4]).to match(/sops_template.*\.yaml/)
+            [encrypted_content, "", success_status]
+          end
+          described_class.encrypt_to_file(file_path, content)
+        end
+
+        it "passes public_key explicitly if provided" do
+          custom_key = "age1customkeyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
+          expect(Open3).to receive(:capture3) do |_env, *args|
+            expect(args.size).to eq(5) # ["sops", "-e", "--age", custom_key, temp_path]
+            expect(args[0]).to eq("sops")
+            expect(args[1]).to eq("-e")
+            expect(args[2]).to eq("--age")
+            expect(args[3]).to eq(custom_key)
+            expect(args[4]).to match(/sops_template.*\.yaml/)
+            [encrypted_content, "", success_status]
+          end
+          described_class.encrypt_to_file(file_path, content, public_key: custom_key)
+        end
+      end
+
+      context "when public key is not available" do
+        before do
+          allow(SopsRails.config).to receive(:public_key).and_return(nil)
+        end
+
+        it "calls sops without --age flag (relies on .sops.yaml)" do
+          expect(Open3).to receive(:capture3) do |_env, *args|
+            expect(args.size).to eq(3) # ["sops", "-e", temp_path]
+            expect(args[0]).to eq("sops")
+            expect(args[1]).to eq("-e")
+            expect(args[2]).to match(/sops_template.*\.yaml/)
+            expect(args).not_to include("--age")
+            [encrypted_content, "", success_status]
+          end
+          described_class.encrypt_to_file(file_path, content)
+        end
       end
 
       it "raises EncryptionError when SOPS fails" do

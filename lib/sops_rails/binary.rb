@@ -123,6 +123,8 @@ module SopsRails
       #
       # @param file_path [String] Path where the encrypted file will be created
       # @param content [String] Plain text content to encrypt
+      # @param public_key [String, nil] Optional age public key to encrypt for.
+      #   If not provided, extracts from config. If nil, SOPS will use .sops.yaml rules.
       # @return [Boolean] `true` if encryption succeeded
       # @raise [SopsNotFoundError] if SOPS binary is not available
       # @raise [EncryptionError] if encryption fails
@@ -131,15 +133,23 @@ module SopsRails
       #   SopsRails::Binary.encrypt_to_file("config/credentials.yaml.enc", "secret_key_base: abc123")
       #   # => true
       #
-      def encrypt_to_file(file_path, content)
+      # @example Create with explicit public key
+      #   SopsRails::Binary.encrypt_to_file("config/credentials.yaml.enc", "secret_key_base: abc123",
+      #                                      public_key: "age1...")
+      #   # => true
+      #
+      def encrypt_to_file(file_path, content, public_key: nil)
         raise SopsNotFoundError, "sops binary not found in PATH" unless available?
 
         Debug.log_key_info
         file_path_str = file_path.to_s
         Debug.log("Encrypting content to: #{file_path_str}")
 
+        # Auto-detect public key if not explicitly provided
+        public_key ||= SopsRails.config.public_key
+
         require "tempfile"
-        encrypt_via_tempfile(file_path_str, content)
+        encrypt_via_tempfile(file_path_str, content, public_key)
       end
 
       private
@@ -148,24 +158,47 @@ module SopsRails
       #
       # @param file_path_str [String] Target file path
       # @param content [String] Plain content to encrypt
+      # @param public_key [String, nil] Optional age public key to encrypt for
       # @return [Boolean] true on success
       # @raise [EncryptionError] if encryption fails
       #
-      def encrypt_via_tempfile(file_path_str, content)
-        # Determine temp file extension based on target file
-        extension = File.extname(file_path_str).sub(/\.enc$/, "")
-        extension = ".yaml" if extension.empty?
+      def encrypt_via_tempfile(file_path_str, content, public_key)
+        extension = determine_temp_file_extension(file_path_str)
 
         Tempfile.create(["sops_template", extension]) do |temp|
           temp.write(content)
           temp.flush
 
-          Debug.log("Executing: sops -e #{temp.path} > #{file_path_str}")
-          env = build_sops_env
-          stdout, stderr, status = Open3.capture3(env, "sops", "-e", temp.path)
+          sops_args = build_encrypt_command(public_key, temp.path)
+          Debug.log("Executing: #{sops_args.join(" ")} > #{file_path_str}")
 
+          env = build_sops_env
+          stdout, stderr, status = Open3.capture3(env, *sops_args)
           write_encrypted_output(file_path_str, stdout, stderr, status)
         end
+      end
+
+      # Determine the file extension for the temporary file.
+      #
+      # @param file_path_str [String] Target file path
+      # @return [String] File extension (e.g., ".yaml")
+      #
+      def determine_temp_file_extension(file_path_str)
+        extension = File.extname(file_path_str).sub(/\.enc$/, "")
+        extension.empty? ? ".yaml" : extension
+      end
+
+      # Build the SOPS encryption command arguments.
+      #
+      # @param public_key [String, nil] Optional age public key
+      # @param temp_path [String] Path to temporary file
+      # @return [Array<String>] Command arguments
+      #
+      def build_encrypt_command(public_key, temp_path)
+        args = ["sops", "-e"]
+        args.push("--age", public_key) if public_key
+        args.push(temp_path)
+        args
       end
 
       # Process encryption result and write to target file.

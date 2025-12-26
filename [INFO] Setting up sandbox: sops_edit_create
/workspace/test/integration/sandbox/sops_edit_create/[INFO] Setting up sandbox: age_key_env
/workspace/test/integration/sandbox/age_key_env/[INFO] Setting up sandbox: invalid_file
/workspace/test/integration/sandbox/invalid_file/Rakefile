@@ -1,0 +1,3 @@
+require "bundler/setup"
+require "sops_rails"
+load "sops_rails/tasks/sops.rake"
