@@ -26,7 +26,7 @@ module SopsRails
   class Railtie < Rails::Railtie
     # Load rake tasks when Rails is available
     rake_tasks do
-      Dir.glob(File.join(__dir__, "../tasks/**/*.rake")).each { |r| load r }
+      Dir.glob(File.join(__dir__, "tasks/**/*.rake")).each { |r| load r }
     end
   end
 end

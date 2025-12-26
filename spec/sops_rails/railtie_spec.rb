@@ -5,6 +5,7 @@
 begin
   require "rails"
   require "rails/railtie"
+  require "rake"
 rescue LoadError
   # Rails not available - skip tests
 end
@@ -196,6 +197,18 @@ if defined?(Rails) && defined?(SopsRails::Railtie)
           end
 
           expect(SopsRails.config.encrypted_path).to eq("updated/path")
+        end
+      end
+
+      describe "rake tasks are loaded" do
+        it "loads sops:init task" do
+          # Verify the task is available in Rake
+          expect(Rake::Task.task_defined?("sops:init")).to be true
+        end
+
+        it "task has a description" do
+          task = Rake::Task["sops:init"]
+          expect(task.comment).to include("Initialize sops-rails")
         end
       end
     end
