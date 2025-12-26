@@ -66,6 +66,34 @@ stdout, stderr, status = Open3.capture3("sops", "-d", file_path)
 raise DecryptionError, stderr unless status.success?
 ```
 
+### Thread-Safe Singleton Pattern
+When implementing singleton-style module methods, use Mutex for thread-safe initialization:
+
+```ruby
+module SopsRails
+  @mutex = Mutex.new
+
+  def self.config
+    @mutex.synchronize do
+      @config ||= Configuration.new
+    end
+  end
+end
+```
+
+### Test Helpers
+Provide public reset methods instead of relying on `instance_variable_set`:
+
+```ruby
+# Good: Public API for testing
+def self.reset!
+  @mutex.synchronize { @config = nil }
+end
+
+# Bad: Exposing internals in tests
+SopsRails.instance_variable_set(:@config, nil)
+```
+
 ## Testing Requirements
 
 - Write RSpec tests in `spec/` directory

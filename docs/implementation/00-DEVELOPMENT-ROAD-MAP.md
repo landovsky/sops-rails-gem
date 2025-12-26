@@ -4,7 +4,7 @@ A detailed agile roadmap for implementing the sops-rails gem. Each stage deliver
 
 ---
 
-## Stage 1: Core MVP — Read Encrypted Credentials 🎯
+## [IN PROGRESS] Stage 1: Core MVP — Read Encrypted Credentials 🎯
 
 **Goal:** Enable Rails applications to read SOPS-encrypted YAML credential files in development mode.
 
@@ -12,7 +12,7 @@ A detailed agile roadmap for implementing the sops-rails gem. Each stage deliver
 
 ### Features
 
-#### 1.1 Configuration Module
+#### [DONE] 1.1 Configuration Module
 
 Create the base configuration system that stores gem settings.
 

@@ -32,6 +32,16 @@ Always verify implementations are trustworthy:
 3. **Documentation exists**: YARD comments on public APIs
 4. **Acceptance criteria met**: Check roadmap for feature requirements
 
+## Pre-flight Check
+
+Before implementing features, ensure the project builds:
+
+1. **Gemspec valid**: `ruby -e "require './sops_rails.gemspec'"` should not error
+2. **Bundle works**: `bundle check` passes
+3. **Tests run**: `bundle exec rspec` executes (even if tests fail)
+
+If gemspec has TODO placeholders blocking bundler, fix them first with valid URLs.
+
 ## When Implementing Features
 
 1. Read the relevant section in `00-DEVELOPMENT-ROAD-MAP.md`
