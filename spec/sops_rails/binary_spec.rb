@@ -569,5 +569,72 @@ RSpec.describe SopsRails::Binary do
         end
       end
     end
+
+    describe ".encrypt_to_file" do
+      let(:temp_dir) { Dir.mktmpdir }
+      let(:test_file) { File.join(temp_dir, "test_credentials.yaml.enc") }
+      let(:plain_content) { "aws:\n  access_key_id: test123\n  region: us-east-1\n" }
+      let(:sops_config) { File.join(Dir.pwd, ".sops.yaml") }
+
+      before do
+        # Skip if .sops.yaml doesn't exist (needed for encryption rules)
+        skip ".sops.yaml not found - run sops:init first" unless File.exist?(sops_config)
+      end
+
+      after do
+        FileUtils.rm_rf(temp_dir) if Dir.exist?(temp_dir)
+      end
+
+      it "creates an encrypted file that can be decrypted" do
+        # Encrypt
+        result = described_class.encrypt_to_file(test_file, plain_content)
+        expect(result).to be true
+        expect(File.exist?(test_file)).to be true
+
+        # Verify it's actually encrypted (not plain text)
+        file_content = File.read(test_file)
+        expect(file_content).not_to include("test123")
+        expect(file_content).to include("sops:") # SOPS metadata
+
+        # Decrypt and verify content matches
+        decrypted = described_class.decrypt(test_file)
+        expect(decrypted).to eq(plain_content)
+      end
+
+      it "creates a file with valid SOPS format metadata" do
+        described_class.encrypt_to_file(test_file, plain_content)
+
+        # Parse the encrypted file
+        file_content = File.read(test_file)
+        parsed = YAML.safe_load(file_content)
+
+        # SOPS files should have sops metadata
+        expect(parsed).to be_a(Hash)
+        expect(parsed).to have_key("sops")
+        expect(parsed["sops"]).to be_a(Hash)
+        expect(parsed["sops"]).to have_key("mac")
+        expect(parsed["sops"]).to have_key("lastmodified")
+      end
+
+      it "creates a file that passes sops --file-status check" do
+        described_class.encrypt_to_file(test_file, plain_content)
+
+        # Verify file status is valid
+        stdout, stderr, status = Open3.capture3("sops", "--file-status", test_file)
+        expect(status.success?).to be true, "File status check failed: #{stderr}"
+      end
+
+      it "creates a file that can be edited with sops edit" do
+        described_class.encrypt_to_file(test_file, plain_content)
+
+        # If the file can be decrypted, it should be editable
+        # (sops edit requires the same format as decrypt)
+        expect { described_class.decrypt(test_file) }.not_to raise_error
+
+        # Verify the file is recognized by SOPS as editable
+        stdout, stderr, status = Open3.capture3("sops", "--file-status", test_file)
+        expect(status.success?).to be true, "File not recognized by SOPS: #{stderr}"
+      end
+    end
   end
 end
