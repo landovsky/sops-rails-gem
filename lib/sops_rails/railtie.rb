@@ -24,8 +24,9 @@ module SopsRails
   #     password: <%= SopsRails.credentials.database.password %>
   #
   class Railtie < Rails::Railtie
-    # Railtie is intentionally minimal. Rails handles initializer loading
-    # automatically, and credentials are lazily loaded, so no explicit
-    # initialization code is required here.
+    # Load rake tasks when Rails is available
+    rake_tasks do
+      Dir.glob(File.join(__dir__, "../tasks/**/*.rake")).each { |r| load r }
+    end
   end
 end

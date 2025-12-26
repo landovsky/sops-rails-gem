@@ -9,4 +9,7 @@ require "rubocop/rake_task"
 
 RuboCop::RakeTask.new
 
+# Load sops-rails rake tasks
+Dir.glob(File.join(__dir__, "lib/sops_rails/tasks/**/*.rake")).each { |r| load r }
+
 task default: %i[spec rubocop]
