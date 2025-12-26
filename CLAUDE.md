@@ -80,6 +80,33 @@ lib/
 │       └── init.rake
 ```
 
+### Credentials API
+
+The `SopsRails::Credentials` class provides OpenStruct-like access with safe chaining:
+
+```ruby
+# Method chaining (returns NullCredentials for missing keys)
+SopsRails.credentials.aws.access_key_id    # => "AKIA..."
+SopsRails.credentials.missing.nested.key   # => nil (not error!)
+
+# Hash-like access
+SopsRails.credentials[:aws][:region]       # => "us-east-1"
+SopsRails.credentials.dig(:aws, :region)   # => "us-east-1"
+
+# Introspection (safe for logging)
+SopsRails.credentials.keys                 # => [:aws, :database]
+SopsRails.credentials.key?(:aws)           # => true
+SopsRails.credentials.inspect              # => "#<SopsRails::Credentials keys=[:aws, :database]>"
+
+# Raw hash access
+SopsRails.credentials.to_h                 # => { aws: { ... }, database: { ... } }
+```
+
+**Key behaviors:**
+- Missing keys return `NullCredentials` (nil-like) to allow safe chaining
+- `inspect` shows keys without exposing secret values
+- Credentials are lazily loaded on first access and cached
+
 ### Error Handling
 
 - Define specific exception classes in `lib/sops_rails/errors.rb`

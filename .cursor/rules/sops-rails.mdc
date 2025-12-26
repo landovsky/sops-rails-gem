@@ -94,6 +94,56 @@ end
 SopsRails.instance_variable_set(:@config, nil)
 ```
 
+### Null Object Pattern
+When providing safe access to potentially missing nested data, use a Null Object that returns itself for chaining:
+
+```ruby
+class NullCredentials
+  include Singleton
+
+  def method_missing(*)
+    self  # Return self to allow chaining: null.a.b.c
+  end
+
+  def nil?
+    true  # Evaluates as nil in boolean contexts
+  end
+
+  def ==(other)
+    other.nil? || other.is_a?(NullCredentials)
+  end
+end
+```
+
+### Avoiding Mutex Deadlock
+When one synchronized method calls another that also synchronizes on the same mutex:
+
+```ruby
+# BAD: Deadlock! credentials acquires @mutex, then calls config which also acquires @mutex
+def self.credentials
+  @mutex.synchronize do
+    @credentials ||= Credentials.load(config)  # DEADLOCK
+  end
+end
+
+# GOOD: Get the nested resource outside the mutex first
+def self.credentials
+  current_config = config  # config acquires/releases @mutex
+  @mutex.synchronize do
+    @credentials ||= Credentials.load(current_config)
+  end
+end
+```
+
+### Inspect Without Exposing Secrets
+When implementing `inspect` on objects containing secrets, show structure without values:
+
+```ruby
+def inspect
+  "#<#{self.class.name} keys=#{keys.inspect}>"  # Shows keys, not values
+end
+```
+
 ## Testing Requirements
 
 - Write RSpec tests in `spec/` directory

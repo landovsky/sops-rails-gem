@@ -32,7 +32,7 @@ Create the base configuration system that stores gem settings.
 
 ---
 
-#### 1.2 SOPS Binary Interface
+#### [DONE] 1.2 SOPS Binary Interface
 
 Create a clean interface for shelling out to the SOPS binary.
 
@@ -53,7 +53,7 @@ Create a clean interface for shelling out to the SOPS binary.
 
 ---
 
-#### 1.3 Credentials Reader
+#### 1.3 [DONE] Credentials Reader
 
 Parse decrypted YAML and provide convenient access API.
 

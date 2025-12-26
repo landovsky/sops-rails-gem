@@ -1,9 +1,12 @@
 # frozen_string_literal: true
 
+require "singleton"
+
 require_relative "sops_rails/version"
 require_relative "sops_rails/errors"
 require_relative "sops_rails/configuration"
 require_relative "sops_rails/binary"
+require_relative "sops_rails/credentials"
 
 # SopsRails provides SOPS encryption support for Rails applications.
 #
@@ -72,6 +75,37 @@ module SopsRails
   def self.reset!
     @mutex.synchronize do
       @config = nil
+      @credentials = nil
+    end
+  end
+
+  # Access credentials loaded from SOPS-encrypted files.
+  #
+  # Credentials are lazily loaded on first access and provide OpenStruct-like
+  # method chaining for nested access. Missing keys return `nil` instead of
+  # raising errors.
+  #
+  # @return [Credentials] The credentials object
+  # @raise [SopsNotFoundError] if SOPS binary is not available (on first access)
+  # @raise [DecryptionError] if decryption fails (on first access)
+  #
+  # @example Method chaining
+  #   SopsRails.credentials.aws.access_key_id
+  #
+  # @example Using dig
+  #   SopsRails.credentials.dig(:aws, :access_key_id)
+  #
+  # @example Missing keys return nil
+  #   SopsRails.credentials.nonexistent.nested.key # => nil
+  #
+  def self.credentials
+    # Get config outside the credentials mutex to avoid deadlock.
+    # The `config` method acquires @mutex internally, so calling it inside
+    # another @mutex.synchronize block would cause a recursive lock.
+    # This is safe because config is itself thread-safe.
+    current_config = config
+    @mutex.synchronize do
+      @credentials ||= Credentials.load(current_config)
     end
   end
 end
