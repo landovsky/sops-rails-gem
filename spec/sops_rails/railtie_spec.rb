@@ -30,6 +30,66 @@ if defined?(Rails) && defined?(SopsRails::Railtie)
       SopsRails.reset!
     end
 
+    # Shared context for tests that need an encrypted file setup
+    shared_context "with encrypted file" do |filename: "credentials.yaml.enc"|
+      let(:tmpdir) { Dir.mktmpdir }
+      let(:encrypted_file) { File.join(tmpdir, filename) }
+
+      before do
+        File.write(encrypted_file, "encrypted content")
+        SopsRails.configure do |config|
+          config.encrypted_path = tmpdir
+          config.credential_files = [filename]
+        end
+      end
+
+      after do
+        FileUtils.remove_entry(tmpdir) if Dir.exist?(tmpdir)
+      end
+    end
+
+    # Shared context for rake task tests
+    shared_context "rake task setup" do
+      before do
+        SopsRails.reset!
+        # Re-enable task to allow multiple invocations in tests
+        Rake::Task["sops:show"].reenable if Rake::Task.task_defined?("sops:show")
+        # Reset ARGV to default (no extra arguments)
+        stub_const("ARGV", ["sops:show"])
+      end
+
+      # Helper to invoke task with simulated ARGV
+      def invoke_show_with_argv(*args)
+        stub_const("ARGV", ["sops:show"] + args)
+        Rake::Task["sops:show"].reenable
+        Rake::Task["sops:show"].invoke
+      end
+    end
+
+    # Shared examples for error handling tests
+    shared_examples "exits with error" do |error_class, message_pattern, error_message|
+      it "exits with error code 1" do
+        allow(SopsRails::Binary).to receive(:decrypt).and_raise(error_class, error_message)
+
+        expect do
+          invoke_show_with_argv
+        rescue SystemExit => e
+          expect(e.status).to eq(1)
+          raise
+        end.to raise_error(SystemExit)
+      end
+
+      it "outputs error message to stderr" do
+        allow(SopsRails::Binary).to receive(:decrypt).and_raise(error_class, error_message)
+
+        expect do
+          invoke_show_with_argv
+        rescue SystemExit
+          # Expected
+        end.to output(message_pattern).to_stderr
+      end
+    end
+
     describe "class definition" do
       it "inherits from Rails::Railtie" do
         expect(described_class.superclass).to eq(Rails::Railtie)
@@ -37,19 +97,6 @@ if defined?(Rails) && defined?(SopsRails::Railtie)
 
       it "is defined" do
         expect(described_class).to be_a(Class)
-      end
-    end
-
-    describe "Rails integration" do
-      # These tests verify that the Railtie can be loaded and that
-      # SopsRails.credentials is accessible in a Rails-like context.
-      # Full integration testing would require a complete Rails app,
-      # which is beyond the scope of unit tests.
-
-      it "makes SopsRails.credentials accessible when Rails is defined" do
-        # Even though Rails is loaded, credentials should still work
-        # (lazy loading ensures no errors if files don't exist)
-        expect(SopsRails).to respond_to(:credentials)
       end
     end
 
@@ -232,6 +279,8 @@ if defined?(Rails) && defined?(SopsRails::Railtie)
       end
 
       describe "sops:show rake task" do
+        include_context "rake task setup"
+
         let(:decrypted_content) do
           <<~YAML
             aws:
@@ -242,58 +291,27 @@ if defined?(Rails) && defined?(SopsRails::Railtie)
           YAML
         end
 
-        before do
-          SopsRails.reset!
-          # Re-enable task to allow multiple invocations in tests
-          Rake::Task["sops:show"].reenable if Rake::Task.task_defined?("sops:show")
-          # Reset ARGV to default (no extra arguments)
-          stub_const("ARGV", ["sops:show"])
-        end
-
-        # Helper to invoke task with simulated ARGV
-        def invoke_show_with_argv(*args)
-          stub_const("ARGV", ["sops:show"] + args)
-          Rake::Task["sops:show"].reenable
-          Rake::Task["sops:show"].invoke
-        end
-
         describe "default behavior" do
+          include_context "with encrypted file"
+
           it "outputs decrypted YAML to stdout" do
-            Dir.mktmpdir do |tmpdir|
-              encrypted_file = File.join(tmpdir, "credentials.yaml.enc")
-              File.write(encrypted_file, "encrypted content")
+            allow(SopsRails::Binary).to receive(:decrypt).with(encrypted_file).and_return(decrypted_content)
 
-              SopsRails.configure do |config|
-                config.encrypted_path = tmpdir
-                config.credential_files = ["credentials.yaml.enc"]
-              end
-
-              allow(SopsRails::Binary).to receive(:decrypt).with(encrypted_file).and_return(decrypted_content)
-
-              expect do
-                invoke_show_with_argv
-              end.to output(decrypted_content).to_stdout
-            end
+            expect do
+              invoke_show_with_argv
+            end.to output(decrypted_content).to_stdout
           end
 
           it "uses first credential file from config" do
-            Dir.mktmpdir do |tmpdir|
-              encrypted_file = File.join(tmpdir, "credentials.yaml.enc")
-              File.write(encrypted_file, "encrypted content")
+            expect(SopsRails::Binary).to receive(:decrypt).with(encrypted_file).and_return(decrypted_content)
 
-              SopsRails.configure do |config|
-                config.encrypted_path = tmpdir
-                config.credential_files = ["credentials.yaml.enc"]
-              end
-
-              expect(SopsRails::Binary).to receive(:decrypt).with(encrypted_file).and_return(decrypted_content)
-
-              invoke_show_with_argv
-            end
+            invoke_show_with_argv
           end
         end
 
         describe "FILE argument" do
+          include_context "rake task setup"
+
           it "shows specific file when FILE argument provided" do
             Dir.mktmpdir do |tmpdir|
               specific_file = File.join(tmpdir, "credentials.production.yaml.enc")
@@ -312,23 +330,25 @@ if defined?(Rails) && defined?(SopsRails::Railtie)
 
           it "outputs valid YAML format" do
             Dir.mktmpdir do |tmpdir|
-              encrypted_file = File.join(tmpdir, "custom.yaml.enc")
-              File.write(encrypted_file, "encrypted content")
+              custom_file = File.join(tmpdir, "custom.yaml.enc")
+              File.write(custom_file, "encrypted content")
 
-              allow(SopsRails::Binary).to receive(:decrypt).with(encrypted_file).and_return(decrypted_content)
+              allow(SopsRails::Binary).to receive(:decrypt).with(custom_file).and_return(decrypted_content)
 
               # Verify output is valid YAML by checking it can be parsed
               expect { YAML.safe_load(decrypted_content) }.not_to raise_error
 
               # Verify the task outputs the content
               expect do
-                invoke_show_with_argv(encrypted_file)
+                invoke_show_with_argv(custom_file)
               end.to output(decrypted_content).to_stdout
             end
           end
         end
 
         describe "-e ENVIRONMENT flag" do
+          include_context "rake task setup"
+
           it "shows environment-specific file when -e flag is used" do
             Dir.mktmpdir do |tmpdir|
               env_file = File.join(tmpdir, "credentials.production.yaml.enc")
@@ -377,13 +397,23 @@ if defined?(Rails) && defined?(SopsRails::Railtie)
         end
 
         describe "error handling" do
-          it "exits with error code 1 when file not found" do
-            Dir.mktmpdir do |tmpdir|
+          context "when file not found" do
+            include_context "rake task setup"
+
+            let(:tmpdir) { Dir.mktmpdir }
+
+            before do
               SopsRails.configure do |config|
                 config.encrypted_path = tmpdir
                 config.credential_files = ["nonexistent.yaml.enc"]
               end
+            end
 
+            after do
+              FileUtils.remove_entry(tmpdir) if Dir.exist?(tmpdir)
+            end
+
+            it "exits with error code 1" do
               expect do
                 invoke_show_with_argv
               rescue SystemExit => e
@@ -391,15 +421,8 @@ if defined?(Rails) && defined?(SopsRails::Railtie)
                 raise
               end.to raise_error(SystemExit)
             end
-          end
 
-          it "outputs error message to stderr when file not found" do
-            Dir.mktmpdir do |tmpdir|
-              SopsRails.configure do |config|
-                config.encrypted_path = tmpdir
-                config.credential_files = ["nonexistent.yaml.enc"]
-              end
-
+            it "outputs error message to stderr" do
               expect do
                 invoke_show_with_argv
               rescue SystemExit
@@ -408,98 +431,58 @@ if defined?(Rails) && defined?(SopsRails::Railtie)
             end
           end
 
-          it "exits with error code 1 when decryption fails" do
-            Dir.mktmpdir do |tmpdir|
-              encrypted_file = File.join(tmpdir, "credentials.yaml.enc")
-              File.write(encrypted_file, "encrypted content")
+          context "when decryption fails" do
+            include_context "rake task setup"
 
+            let(:tmpdir) { Dir.mktmpdir }
+            let(:encrypted_file) { File.join(tmpdir, "credentials.yaml.enc") }
+
+            before do
+              File.write(encrypted_file, "encrypted content")
               SopsRails.configure do |config|
                 config.encrypted_path = tmpdir
                 config.credential_files = ["credentials.yaml.enc"]
               end
-
-              allow(SopsRails::Binary).to receive(:decrypt).and_raise(
-                SopsRails::DecryptionError, "failed to decrypt file"
-              )
-
-              expect do
-                invoke_show_with_argv
-              rescue SystemExit => e
-                expect(e.status).to eq(1)
-                raise
-              end.to raise_error(SystemExit)
             end
+
+            after do
+              FileUtils.remove_entry(tmpdir) if Dir.exist?(tmpdir)
+            end
+
+            include_examples "exits with error",
+                             SopsRails::DecryptionError,
+                             /Error: failed to decrypt file/,
+                             "failed to decrypt file"
           end
 
-          it "outputs error message to stderr when decryption fails" do
-            Dir.mktmpdir do |tmpdir|
-              encrypted_file = File.join(tmpdir, "credentials.yaml.enc")
-              File.write(encrypted_file, "encrypted content")
+          context "when SOPS binary not found" do
+            include_context "rake task setup"
 
+            let(:tmpdir) { Dir.mktmpdir }
+            let(:encrypted_file) { File.join(tmpdir, "credentials.yaml.enc") }
+
+            before do
+              File.write(encrypted_file, "encrypted content")
               SopsRails.configure do |config|
                 config.encrypted_path = tmpdir
                 config.credential_files = ["credentials.yaml.enc"]
               end
-
-              allow(SopsRails::Binary).to receive(:decrypt).and_raise(
-                SopsRails::DecryptionError, "failed to decrypt file"
-              )
-
-              expect do
-                invoke_show_with_argv
-              rescue SystemExit
-                # Expected
-              end.to output(/Error: failed to decrypt file/).to_stderr
             end
-          end
 
-          it "exits with error code 1 when SOPS binary not found" do
-            Dir.mktmpdir do |tmpdir|
-              encrypted_file = File.join(tmpdir, "credentials.yaml.enc")
-              File.write(encrypted_file, "encrypted content")
-
-              SopsRails.configure do |config|
-                config.encrypted_path = tmpdir
-                config.credential_files = ["credentials.yaml.enc"]
-              end
-
-              allow(SopsRails::Binary).to receive(:decrypt).and_raise(
-                SopsRails::SopsNotFoundError, "sops binary not found in PATH"
-              )
-
-              expect do
-                invoke_show_with_argv
-              rescue SystemExit => e
-                expect(e.status).to eq(1)
-                raise
-              end.to raise_error(SystemExit)
+            after do
+              FileUtils.remove_entry(tmpdir) if Dir.exist?(tmpdir)
             end
-          end
 
-          it "outputs error message to stderr when SOPS binary not found" do
-            Dir.mktmpdir do |tmpdir|
-              encrypted_file = File.join(tmpdir, "credentials.yaml.enc")
-              File.write(encrypted_file, "encrypted content")
-
-              SopsRails.configure do |config|
-                config.encrypted_path = tmpdir
-                config.credential_files = ["credentials.yaml.enc"]
-              end
-
-              allow(SopsRails::Binary).to receive(:decrypt).and_raise(
-                SopsRails::SopsNotFoundError, "sops binary not found in PATH"
-              )
-
-              expect do
-                invoke_show_with_argv
-              rescue SystemExit
-                # Expected
-              end.to output(/Error: sops binary not found in PATH/).to_stderr
-            end
+            include_examples "exits with error",
+                             SopsRails::SopsNotFoundError,
+                             /Error: sops binary not found in PATH/,
+                             "sops binary not found in PATH"
           end
         end
 
         describe "argument precedence" do
+          include_context "rake task setup"
+
           it "FILE argument takes precedence over -e flag" do
             Dir.mktmpdir do |tmpdir|
               specific_file = File.join(tmpdir, "custom.yaml.enc")

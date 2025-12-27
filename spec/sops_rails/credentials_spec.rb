@@ -1,12 +1,42 @@
 # frozen_string_literal: true
 
 RSpec.describe SopsRails::Credentials do
+  shared_context "with debug logging capture" do
+    let(:logged_messages) { [] }
+
+    before do
+      SopsRails.configure { |c| c.debug_mode = true }
+      allow(SopsRails::Debug).to receive(:warn) do |msg|
+        logged_messages << msg
+        nil
+      end
+    end
+  end
+
   before do
     SopsRails.reset!
     SopsRails.configure { |c| c.debug_mode = false }
   end
 
   after { SopsRails.reset! }
+
+  let(:standard_credentials_data) do
+    {
+      aws: {
+        access_key_id: "AKIAIOSFODNN7EXAMPLE",
+        secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+        region: "us-east-1",
+        nested: { deep: { value: "found" } }
+      },
+      database: {
+        host: "localhost",
+        credentials: {
+          username: "admin",
+          password: "supersecret"
+        }
+      }
+    }
+  end
 
   describe ".new" do
     it "creates a Credentials instance with empty hash by default" do
@@ -23,30 +53,32 @@ RSpec.describe SopsRails::Credentials do
       creds = described_class.new(nil)
       expect(creds).to be_empty
     end
+  end
 
-    it "deep symbolizes string keys" do
+  describe "string key handling" do
+    it "deep symbolizes keys on initialization" do
       creds = described_class.new("aws" => { "access_key" => "value" })
       expect(creds.aws.access_key).to eq("value")
+    end
+
+    it "converts string keys in dig" do
+      creds = described_class.new(standard_credentials_data)
+      expect(creds.dig("aws", "access_key_id")).to eq("AKIAIOSFODNN7EXAMPLE")
+    end
+
+    it "converts string keys in []" do
+      creds = described_class.new(aws: { key: "value" })
+      expect(creds["aws"]["key"]).to eq("value")
+    end
+
+    it "converts string keys in key?" do
+      creds = described_class.new(aws: { key: "value" })
+      expect(creds.key?("aws")).to be true
     end
   end
 
   describe "method chaining" do
-    let(:credentials) do
-      described_class.new(
-        aws: {
-          access_key_id: "AKIAIOSFODNN7EXAMPLE",
-          secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-          region: "us-east-1"
-        },
-        database: {
-          host: "localhost",
-          credentials: {
-            username: "admin",
-            password: "supersecret"
-          }
-        }
-      )
-    end
+    let(:credentials) { described_class.new(standard_credentials_data) }
 
     it "returns values for top-level keys" do
       expect(credentials.aws).to be_a(described_class)
@@ -74,14 +106,7 @@ RSpec.describe SopsRails::Credentials do
   end
 
   describe "#dig" do
-    let(:credentials) do
-      described_class.new(
-        aws: {
-          access_key_id: "AKIAIOSFODNN7EXAMPLE",
-          nested: { deep: { value: "found" } }
-        }
-      )
-    end
+    let(:credentials) { described_class.new(standard_credentials_data) }
 
     it "returns value for single key using dig" do
       # rubocop:disable Style/SingleArgumentDig
@@ -104,28 +129,18 @@ RSpec.describe SopsRails::Credentials do
     it "returns nil for missing nested keys" do
       expect(credentials.dig(:aws, :missing, :key)).to be_nil
     end
-
-    it "works with string keys (converts to symbols)" do
-      expect(credentials.dig("aws", "access_key_id")).to eq("AKIAIOSFODNN7EXAMPLE")
-    end
   end
 
   describe "#[]" do
-    let(:credentials) do
-      described_class.new(aws: { key: "value" })
-    end
+    let(:credentials) { described_class.new(aws: { key: "value" }) }
 
-    it "returns wrapped value for existing key" do
+    it "provides bracket-style access equivalent to method chaining" do
+      expect(credentials[:aws][:key]).to eq(credentials.aws.key)
       expect(credentials[:aws]).to be_a(described_class)
-      expect(credentials[:aws][:key]).to eq("value")
     end
 
     it "returns NullCredentials for missing key" do
       expect(credentials[:missing]).to be_nil
-    end
-
-    it "works with string keys" do
-      expect(credentials["aws"]["key"]).to eq("value")
     end
   end
 
@@ -166,10 +181,6 @@ RSpec.describe SopsRails::Credentials do
 
     it "returns false for missing keys" do
       expect(credentials.key?(:nonexistent)).to be false
-    end
-
-    it "works with string keys" do
-      expect(credentials.key?("aws")).to be true
     end
 
     it "has has_key? alias" do
@@ -241,18 +252,9 @@ RSpec.describe SopsRails::Credentials do
       end
 
       context "when debug mode is enabled" do
-        before do
-          SopsRails.configure { |c| c.debug_mode = true }
-        end
+        include_context "with debug logging capture"
 
         it "logs debug information" do
-          # Capture warn output to verify debug messages (must return nil to avoid type errors)
-          logged_messages = []
-          allow(SopsRails::Debug).to receive(:warn) do |msg|
-            logged_messages << msg
-            nil
-          end
-
           described_class.load
 
           expect(logged_messages).to include("[sops_rails] Loading credentials from config: config")
@@ -275,18 +277,9 @@ RSpec.describe SopsRails::Credentials do
       end
 
       context "when debug mode is enabled" do
-        before do
-          SopsRails.configure { |c| c.debug_mode = true }
-        end
+        include_context "with debug logging capture"
 
         it "logs that file does not exist" do
-          # Capture warn output to verify debug messages (must return nil to avoid type errors)
-          logged_messages = []
-          allow(SopsRails::Debug).to receive(:warn) do |msg|
-            logged_messages << msg
-            nil
-          end
-
           described_class.load
 
           expect(logged_messages).to include("[sops_rails] Loading credentials from config: config")
@@ -434,33 +427,12 @@ RSpec.describe SopsRails do
       expect(first_call).not_to be(second_call)
     end
 
-    describe "acceptance criteria" do
-      it "satisfies: SopsRails.credentials returns Credentials object" do
-        expect(SopsRails.credentials).to be_a(SopsRails::Credentials)
-      end
-
-      it "satisfies: SopsRails.credentials.aws.access_key_id returns string value" do
-        expect(SopsRails.credentials.aws.access_key_id).to eq("AKIAIOSFODNN7EXAMPLE")
-      end
-
-      it "satisfies: SopsRails.credentials.nonexistent.nested.key returns nil (not error)" do
-        expect(SopsRails.credentials.nonexistent.nested.key).to be_nil
-      end
-
-      it "satisfies: SopsRails.credentials.dig(:aws, :access_key_id) works correctly" do
-        expect(SopsRails.credentials.dig(:aws, :access_key_id)).to eq("AKIAIOSFODNN7EXAMPLE")
-      end
-
-      it "satisfies: Credentials are loaded from file specified in config.credential_files" do
-        SopsRails.configure { |c| c.credential_files = ["credentials.yaml.enc"] }
-        expect(SopsRails.credentials.aws).not_to be_nil
-      end
-
-      it "satisfies: Works with valid SOPS-encrypted YAML files" do
-        # The mock setup proves this - we decrypt and parse YAML successfully
-        creds = SopsRails.credentials
-        expect(creds.aws.access_key_id).to eq("AKIAIOSFODNN7EXAMPLE")
-      end
+    it "satisfies acceptance criteria: full integration path works" do
+      # Exercises the complete integration: loading from file, method chaining, dig, and nil handling
+      expect(SopsRails.credentials).to be_a(SopsRails::Credentials)
+      expect(SopsRails.credentials.aws.access_key_id).to eq("AKIAIOSFODNN7EXAMPLE")
+      expect(SopsRails.credentials.nonexistent.nested.key).to be_nil
+      expect(SopsRails.credentials.dig(:aws, :access_key_id)).to eq("AKIAIOSFODNN7EXAMPLE")
     end
   end
 end

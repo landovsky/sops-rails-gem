@@ -3,29 +3,47 @@
 require "spec_helper"
 
 RSpec.describe SopsRails::Binary do
+  # Shared contexts and examples
+  shared_context "with sops available" do
+    before { allow(described_class).to receive(:available?).and_return(true) }
+  end
+
+  shared_context "with debug mode" do
+    before do
+      SopsRails.configure { |c| c.debug_mode = true }
+      allow(File).to receive(:exist?).and_call_original
+      allow(File).to receive(:exist?).with(SopsRails.config.default_age_key_path).and_return(false)
+    end
+  end
+
+  shared_examples "requires sops binary" do |method_name, *args|
+    context "when SOPS is not available" do
+      before { allow(described_class).to receive(:available?).and_return(false) }
+
+      it "raises SopsNotFoundError" do
+        expect { described_class.send(method_name, *args) }
+          .to raise_error(SopsRails::SopsNotFoundError, /sops binary not found in PATH/)
+      end
+    end
+  end
+
+  # Helper method for clean environment
+  def with_clean_env(*keys, &block)
+    original = keys.map { |k| [k, ENV.fetch(k, nil)] }.to_h
+    keys.each { |k| ENV.delete(k) }
+    yield
+  ensure
+    original.each { |k, v| v ? ENV[k] = v : ENV.delete(k) }
+  end
+
   # Store original env vars and restore after all tests
   around do |example|
-    original_age_key = ENV.fetch("SOPS_AGE_KEY", nil)
-    original_age_key_file = ENV.fetch("SOPS_AGE_KEY_FILE", nil)
-    original_debug = ENV.fetch("SOPS_RAILS_DEBUG", nil)
-
-    # Clear env vars for isolation
-    ENV.delete("SOPS_AGE_KEY")
-    ENV.delete("SOPS_AGE_KEY_FILE")
-    ENV.delete("SOPS_RAILS_DEBUG")
-    SopsRails.reset!
-    SopsRails.configure { |c| c.debug_mode = false }
-
-    example.run
-
-    # Restore
-    ENV["SOPS_AGE_KEY"] = original_age_key if original_age_key
-    ENV["SOPS_AGE_KEY_FILE"] = original_age_key_file if original_age_key_file
-    ENV["SOPS_RAILS_DEBUG"] = original_debug if original_debug
-    ENV.delete("SOPS_AGE_KEY") unless original_age_key
-    ENV.delete("SOPS_AGE_KEY_FILE") unless original_age_key_file
-    ENV.delete("SOPS_RAILS_DEBUG") unless original_debug
-    SopsRails.reset!
+    with_clean_env("SOPS_AGE_KEY", "SOPS_AGE_KEY_FILE", "SOPS_RAILS_DEBUG") do
+      SopsRails.reset!
+      SopsRails.configure { |c| c.debug_mode = false }
+      example.run
+      SopsRails.reset!
+    end
   end
 
   describe ".available?" do
@@ -37,9 +55,7 @@ RSpec.describe SopsRails::Binary do
       end
 
       context "when debug mode is enabled" do
-        before do
-          SopsRails.configure { |c| c.debug_mode = true }
-        end
+        include_context "with debug mode"
 
         it "logs debug information" do
           allow(Open3).to receive(:capture3)
@@ -66,9 +82,7 @@ RSpec.describe SopsRails::Binary do
 
   describe ".version" do
     context "when SOPS is available" do
-      before do
-        allow(described_class).to receive(:available?).and_return(true)
-      end
+      include_context "with sops available"
 
       it "returns version string from sops --version" do
         allow(Open3).to receive(:capture3).with("sops",
@@ -77,9 +91,7 @@ RSpec.describe SopsRails::Binary do
       end
 
       context "when debug mode is enabled" do
-        before do
-          SopsRails.configure { |c| c.debug_mode = true }
-        end
+        include_context "with debug mode"
 
         it "logs debug information" do
           allow(Open3).to receive(:capture3).with("sops",
@@ -123,12 +135,7 @@ RSpec.describe SopsRails::Binary do
       end
     end
 
-    context "when SOPS is not available" do
-      it "raises SopsNotFoundError" do
-        allow(described_class).to receive(:available?).and_return(false)
-        expect { described_class.version }.to raise_error(SopsRails::SopsNotFoundError, /sops binary not found in PATH/)
-      end
-    end
+    it_behaves_like "requires sops binary", :version
   end
 
   describe ".decrypt" do
@@ -136,9 +143,7 @@ RSpec.describe SopsRails::Binary do
     let(:decrypted_content) { "aws:\n  access_key_id: secret123\n" }
 
     context "when SOPS is available" do
-      before do
-        allow(described_class).to receive(:available?).and_return(true)
-      end
+      include_context "with sops available"
 
       it "returns decrypted content from stdout" do
         allow(Open3).to receive(:capture3).with(anything, "sops", "-d",
@@ -147,12 +152,7 @@ RSpec.describe SopsRails::Binary do
       end
 
       context "when debug mode is enabled" do
-        before do
-          SopsRails.configure { |c| c.debug_mode = true }
-          # Mock file operations for default key path
-          allow(File).to receive(:exist?).and_call_original
-          allow(File).to receive(:exist?).with(SopsRails.config.default_age_key_path).and_return(false)
-        end
+        include_context "with debug mode"
 
         it "logs debug information" do
           allow(Open3).to receive(:capture3)
@@ -213,23 +213,14 @@ RSpec.describe SopsRails::Binary do
       end
     end
 
-    context "when SOPS is not available" do
-      it "raises SopsNotFoundError" do
-        allow(described_class).to receive(:available?).and_return(false)
-        expect do
-          described_class.decrypt(file_path)
-        end.to raise_error(SopsRails::SopsNotFoundError, /sops binary not found in PATH/)
-      end
-    end
+    it_behaves_like "requires sops binary", :decrypt, "config/credentials.yaml.enc"
   end
 
   describe ".edit" do
     let(:file_path) { "config/credentials.yaml.enc" }
 
     context "when SOPS is available" do
-      before do
-        allow(described_class).to receive(:available?).and_return(true)
-      end
+      include_context "with sops available"
 
       it "calls system with sops and file path" do
         expect(described_class).to receive(:system).with(anything, "sops", file_path).and_return(true)
@@ -258,12 +249,7 @@ RSpec.describe SopsRails::Binary do
       end
 
       context "when debug mode is enabled" do
-        before do
-          SopsRails.configure { |c| c.debug_mode = true }
-          # Mock file operations for default key path
-          allow(File).to receive(:exist?).and_call_original
-          allow(File).to receive(:exist?).with(SopsRails.config.default_age_key_path).and_return(false)
-        end
+        include_context "with debug mode"
 
         it "logs debug information" do
           allow(described_class).to receive(:system).with(anything, "sops", file_path).and_return(true)
@@ -312,14 +298,7 @@ RSpec.describe SopsRails::Binary do
       end
     end
 
-    context "when SOPS is not available" do
-      it "raises SopsNotFoundError" do
-        allow(described_class).to receive(:available?).and_return(false)
-        expect do
-          described_class.edit(file_path)
-        end.to raise_error(SopsRails::SopsNotFoundError, /sops binary not found in PATH/)
-      end
-    end
+    it_behaves_like "requires sops binary", :edit, "config/credentials.yaml.enc"
   end
 
   describe ".encrypt_to_file" do
@@ -330,8 +309,9 @@ RSpec.describe SopsRails::Binary do
     let(:failure_status) { instance_double(Process::Status, success?: false) }
 
     context "when SOPS is available" do
+      include_context "with sops available"
+
       before do
-        allow(described_class).to receive(:available?).and_return(true)
         allow(File).to receive(:write)
       end
 
@@ -426,11 +406,7 @@ RSpec.describe SopsRails::Binary do
       end
 
       context "when debug mode is enabled" do
-        before do
-          SopsRails.configure { |c| c.debug_mode = true }
-          allow(File).to receive(:exist?).and_call_original
-          allow(File).to receive(:exist?).with(SopsRails.config.default_age_key_path).and_return(false)
-        end
+        include_context "with debug mode"
 
         it "logs debug information" do
           allow(Open3).to receive(:capture3).and_return([encrypted_content, "", success_status])
@@ -441,88 +417,9 @@ RSpec.describe SopsRails::Binary do
       end
     end
 
-    context "when SOPS is not available" do
-      it "raises SopsNotFoundError" do
-        allow(described_class).to receive(:available?).and_return(false)
-        expect do
-          described_class.encrypt_to_file(file_path, content)
-        end.to raise_error(SopsRails::SopsNotFoundError, /sops binary not found in PATH/)
-      end
-    end
+    it_behaves_like "requires sops binary", :encrypt_to_file, "config/credentials.yaml.enc", "secret_key_base: abc123\n"
   end
 
-  describe "acceptance criteria" do
-    describe "SopsRails::Binary.available? returns true when sops is installed" do
-      it "returns true when which sops succeeds" do
-        allow(Open3).to receive(:capture3).with("which",
-                                                "sops").and_return(["/usr/bin/sops", "", double(success?: true)])
-        expect(described_class.available?).to be true
-      end
-    end
-
-    describe "SopsRails::Binary.version returns version string" do
-      before do
-        allow(described_class).to receive(:available?).and_return(true)
-      end
-
-      it "returns version string like '3.8.1'" do
-        allow(Open3).to receive(:capture3).with("sops",
-                                                "--version").and_return(["sops 3.8.1\n", "", double(success?: true)])
-        expect(described_class.version).to eq("3.8.1")
-      end
-    end
-
-    describe "SopsRails::Binary.decrypt(file_path) returns decrypted content as string" do
-      before do
-        allow(described_class).to receive(:available?).and_return(true)
-      end
-
-      it "returns decrypted content" do
-        content = "decrypted: content\n"
-        allow(Open3).to receive(:capture3).with(anything, "sops", "-d",
-                                                "file.yaml.enc").and_return([content, "", double(success?: true)])
-        expect(described_class.decrypt("file.yaml.enc")).to eq(content)
-      end
-    end
-
-    describe "Raises SopsRails::SopsNotFoundError when binary not in PATH" do
-      it "raises error when available? returns false" do
-        allow(described_class).to receive(:available?).and_return(false)
-        expect { described_class.version }.to raise_error(SopsRails::SopsNotFoundError)
-        expect { described_class.decrypt("file.yaml.enc") }.to raise_error(SopsRails::SopsNotFoundError)
-      end
-    end
-
-    describe "Raises SopsRails::DecryptionError with meaningful message when decryption fails" do
-      before do
-        allow(described_class).to receive(:available?).and_return(true)
-      end
-
-      it "raises DecryptionError with error details" do
-        error_msg = "failed to get the data key"
-        allow(Open3).to receive(:capture3).with(anything, "sops", "-d",
-                                                "file.yaml.enc").and_return(["", error_msg, double(success?: false)])
-        expect { described_class.decrypt("file.yaml.enc") }.to raise_error(SopsRails::DecryptionError, /#{error_msg}/)
-      end
-    end
-
-    describe "Decrypted content never touches filesystem (memory-only)" do
-      before do
-        allow(described_class).to receive(:available?).and_return(true)
-      end
-
-      it "captures content from stdout only" do
-        content = "decrypted content"
-        allow(Open3).to receive(:capture3).with(anything, "sops", "-d",
-                                                "file.yaml.enc").and_return([content, "", double(success?: true)])
-
-        # Verify we're not writing to filesystem by checking Open3 is called correctly
-        expect(Open3).to receive(:capture3).with(anything, "sops", "-d", "file.yaml.enc")
-        result = described_class.decrypt("file.yaml.enc")
-        expect(result).to eq(content)
-      end
-    end
-  end
 
   # Integration tests require real SOPS binary
   describe "integration tests", integration: true do
