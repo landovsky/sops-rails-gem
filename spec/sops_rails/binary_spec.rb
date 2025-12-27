@@ -582,7 +582,7 @@ RSpec.describe SopsRails::Binary do
       end
 
       after do
-        FileUtils.rm_rf(temp_dir) if Dir.exist?(temp_dir)
+        FileUtils.rm_rf(temp_dir)
       end
 
       it "creates an encrypted file that can be decrypted" do
@@ -620,7 +620,7 @@ RSpec.describe SopsRails::Binary do
         described_class.encrypt_to_file(test_file, plain_content)
 
         # Verify file status is valid
-        stdout, stderr, status = Open3.capture3("sops", "--file-status", test_file)
+        _stdout, stderr, status = Open3.capture3("sops", "--file-status", test_file)
         expect(status.success?).to be true, "File status check failed: #{stderr}"
       end
 
@@ -632,7 +632,7 @@ RSpec.describe SopsRails::Binary do
         expect { described_class.decrypt(test_file) }.not_to raise_error
 
         # Verify the file is recognized by SOPS as editable
-        stdout, stderr, status = Open3.capture3("sops", "--file-status", test_file)
+        _stdout, stderr, status = Open3.capture3("sops", "--file-status", test_file)
         expect(status.success?).to be true, "File not recognized by SOPS: #{stderr}"
       end
     end

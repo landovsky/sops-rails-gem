@@ -19,9 +19,7 @@ RSpec.configure do |config|
 
   # Auto-skip integration tests when SOPS is not available
   # This allows tests to be written but skipped gracefully
-  config.before(:example, :integration) do |example|
-    unless SopsRails::Binary.available?
-      skip "SOPS binary not available (install SOPS to run integration tests)"
-    end
+  config.before(:example, :integration) do
+    skip "SOPS binary not available (install SOPS to run integration tests)" unless SopsRails::Binary.available?
   end
 end

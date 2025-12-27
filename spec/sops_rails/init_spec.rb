@@ -452,13 +452,13 @@ RSpec.describe SopsRails::Init do
   end
 
   # Integration tests require real SOPS and age binaries with valid keys
-  # These tests are skipped by default - run with: RUN_INTEGRATION=1 bundle exec rspec
+  # These tests run by default but skip gracefully when prerequisites are missing
+  # Use SKIP_INTEGRATION=1 to exclude them entirely
   describe "integration tests", :integration do
-    let(:age_keys_path) { SopsRails::Init::AGE_KEYS_PATH }
+    let(:age_keys_path) { SopsRails.config.default_age_key_path }
 
     before do
-      skip "Integration tests skipped (set RUN_INTEGRATION=1 to run)" unless ENV["RUN_INTEGRATION"] == "1"
-      skip "SOPS binary not available" unless SopsRails::Binary.available?
+      # SOPS availability is checked by spec_helper's :integration hook
       skip "age binary not available" unless described_class.age_available?
       skip "age key not found at #{age_keys_path}" unless File.exist?(age_keys_path)
     end
