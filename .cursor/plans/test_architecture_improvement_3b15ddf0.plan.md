@@ -27,6 +27,15 @@ todos:
       - support-infrastructure
 ---
 
+# Initial prompt
+Analyze tests in /spec and suggest a plan to improve or redesign tests to:
+- align with @docs/implementation/02-TEST-ARCHITECTURE-RECOMMENDATIONS.md
+- decrease false positive tests
+- improve test coverage
+
+Look in @docs/implementation/03-TEST-INCIDENTS.md
+
+
 # Test Architecture Improvement Plan
 
 ## Problem Summary
@@ -136,4 +145,3 @@ expect(Open3).to receive(:capture3) do |_env, *args|
 Extend this pattern to also verify:
 
 - Environment hash contains expected keys when key file configured
-- No `--age` flag when `public_key` is nil (line 388 does this well)
