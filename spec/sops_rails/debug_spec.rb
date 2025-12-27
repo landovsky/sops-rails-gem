@@ -109,7 +109,9 @@ RSpec.describe SopsRails::Debug do
         end
 
         it "logs SOPS_AGE_KEY as key source" do
-          expect(described_class).to receive(:warn).with("[sops_rails] Key source: SOPS_AGE_KEY (environment variable set)")
+          expect(described_class).to receive(:warn).with(
+            "[sops_rails] Key source: SOPS_AGE_KEY (environment variable set)"
+          )
           expect(described_class).to receive(:warn).with("[sops_rails] Resolved key file: (none)")
           described_class.log_key_info
         end
@@ -166,7 +168,9 @@ RSpec.describe SopsRails::Debug do
         end
 
         it "treats empty string as unset and checks default location" do
-          expect(described_class).to receive(:warn).with("[sops_rails] Key source: none (SOPS will use .sops.yaml rules)")
+          expect(described_class).to receive(:warn).with(
+            "[sops_rails] Key source: none (SOPS will use .sops.yaml rules)"
+          )
           expect(described_class).to receive(:warn).with("[sops_rails] Resolved key file: (none)")
           described_class.log_key_info
         end
@@ -184,7 +188,9 @@ RSpec.describe SopsRails::Debug do
           expect(described_class).to receive(:warn).with("[sops_rails] Key source: default_location").ordered
           expect(described_class).to receive(:warn).with("[sops_rails] Key file: #{default_age_key_path} " \
                                                          "(exists: true, readable: true)").ordered
-          expect(described_class).to receive(:warn).with("[sops_rails] Resolved key file: #{default_age_key_path}").ordered
+          expect(described_class).to receive(:warn).with(
+            "[sops_rails] Resolved key file: #{default_age_key_path}"
+          ).ordered
           expect(described_class).to receive(:warn).with("[sops_rails] Public key: age1defaultkey456").ordered
           described_class.log_key_info
         end
@@ -196,7 +202,9 @@ RSpec.describe SopsRails::Debug do
         end
 
         it "logs none as key source" do
-          expect(described_class).to receive(:warn).with("[sops_rails] Key source: none (SOPS will use .sops.yaml rules)")
+          expect(described_class).to receive(:warn).with(
+            "[sops_rails] Key source: none (SOPS will use .sops.yaml rules)"
+          )
           expect(described_class).to receive(:warn).with("[sops_rails] Resolved key file: (none)")
           described_class.log_key_info
         end
@@ -373,6 +381,174 @@ RSpec.describe SopsRails::Debug do
       it "reports age as not available" do
         info = described_class.info
         expect(info[:age_available]).to be false
+      end
+    end
+  end
+
+  describe "Debug/Configuration consistency" do
+    # Ensures Debug.info returns the SAME values as Configuration methods
+    # to prevent regression of Incident #2 (key resolution divergence)
+    #
+    # These tests verify that Debug.info[:resolved_key_file] and Debug.info[:public_key]
+    # always match the values returned by Configuration#resolved_age_key_file and
+    # Configuration#public_key, ensuring debug output accurately reflects what keys
+    # are actually being used for encryption/decryption.
+
+    before do
+      allow(SopsRails::Binary).to receive(:available?).and_return(true)
+      allow(SopsRails::Binary).to receive(:version).and_return("3.8.1")
+      allow(Open3).to receive(:capture3).with("which", "age").and_return(["/usr/bin/age", "", double(success?: true)])
+      # Default: no key file exists
+      allow(File).to receive(:exist?).and_call_original
+      allow(File).to receive(:exist?).with(default_age_key_path).and_return(false)
+    end
+
+    context "when SOPS_AGE_KEY is set" do
+      before do
+        ENV["SOPS_AGE_KEY"] = "AGE-SECRET-KEY-1ABC123..."
+        SopsRails.reset!
+      end
+
+      it "Debug.info matches Configuration for resolved_key_file (nil)" do
+        info = described_class.info
+        config = SopsRails.config
+
+        expect(info[:resolved_key_file]).to eq(config.resolved_age_key_file)
+        expect(info[:resolved_key_file]).to be_nil
+      end
+
+      it "Debug.info matches Configuration for public_key (nil)" do
+        info = described_class.info
+        config = SopsRails.config
+
+        expect(info[:public_key]).to eq(config.public_key)
+        expect(info[:public_key]).to be_nil
+      end
+    end
+
+    context "when SOPS_AGE_KEY_FILE points to existing file" do
+      let(:expanded_path) { File.expand_path("/path/to/key.txt") }
+
+      before do
+        ENV["SOPS_AGE_KEY_FILE"] = "/path/to/key.txt"
+        SopsRails.reset!
+        allow(File).to receive(:exist?).with(expanded_path).and_return(true)
+        allow(File).to receive(:readable?).and_call_original
+        allow(File).to receive(:readable?).with(expanded_path).and_return(true)
+        allow(File).to receive(:foreach).with(expanded_path).and_yield("# public key: age1testkey123")
+      end
+
+      it "Debug.info matches Configuration for resolved_key_file" do
+        info = described_class.info
+        config = SopsRails.config
+
+        expect(info[:resolved_key_file]).to eq(config.resolved_age_key_file)
+        expect(info[:resolved_key_file]).to eq(expanded_path)
+      end
+
+      it "Debug.info matches Configuration for public_key" do
+        info = described_class.info
+        config = SopsRails.config
+
+        expect(info[:public_key]).to eq(config.public_key)
+        expect(info[:public_key]).to eq("age1testkey123")
+      end
+    end
+
+    context "when SOPS_AGE_KEY_FILE points to non-existent file" do
+      let(:expanded_path) { File.expand_path("/path/to/nonexistent.txt") }
+
+      before do
+        ENV["SOPS_AGE_KEY_FILE"] = "/path/to/nonexistent.txt"
+        SopsRails.reset!
+        allow(File).to receive(:exist?).with(expanded_path).and_return(false)
+      end
+
+      it "Debug.info matches Configuration for resolved_key_file (nil)" do
+        info = described_class.info
+        config = SopsRails.config
+
+        expect(info[:resolved_key_file]).to eq(config.resolved_age_key_file)
+        expect(info[:resolved_key_file]).to be_nil
+      end
+
+      it "Debug.info matches Configuration for public_key (nil)" do
+        info = described_class.info
+        config = SopsRails.config
+
+        expect(info[:public_key]).to eq(config.public_key)
+        expect(info[:public_key]).to be_nil
+      end
+    end
+
+    context "when default key location exists" do
+      before do
+        allow(File).to receive(:exist?).with(default_age_key_path).and_return(true)
+        allow(File).to receive(:readable?).and_call_original
+        allow(File).to receive(:readable?).with(default_age_key_path).and_return(true)
+        allow(File).to receive(:foreach).with(default_age_key_path).and_yield("# public key: age1defaultpub")
+      end
+
+      it "Debug.info matches Configuration for resolved_key_file" do
+        info = described_class.info
+        config = SopsRails.config
+
+        expect(info[:resolved_key_file]).to eq(config.resolved_age_key_file)
+        expect(info[:resolved_key_file]).to eq(default_age_key_path)
+      end
+
+      it "Debug.info matches Configuration for public_key" do
+        info = described_class.info
+        config = SopsRails.config
+
+        expect(info[:public_key]).to eq(config.public_key)
+        expect(info[:public_key]).to eq("age1defaultpub")
+      end
+    end
+
+    context "when no key source is found" do
+      before do
+        allow(File).to receive(:exist?).with(default_age_key_path).and_return(false)
+      end
+
+      it "Debug.info matches Configuration for resolved_key_file (nil)" do
+        info = described_class.info
+        config = SopsRails.config
+
+        expect(info[:resolved_key_file]).to eq(config.resolved_age_key_file)
+        expect(info[:resolved_key_file]).to be_nil
+      end
+
+      it "Debug.info matches Configuration for public_key (nil)" do
+        info = described_class.info
+        config = SopsRails.config
+
+        expect(info[:public_key]).to eq(config.public_key)
+        expect(info[:public_key]).to be_nil
+      end
+    end
+
+    context "when SOPS_AGE_KEY_FILE is empty string" do
+      before do
+        ENV["SOPS_AGE_KEY_FILE"] = ""
+        SopsRails.reset!
+        allow(File).to receive(:exist?).with(default_age_key_path).and_return(false)
+      end
+
+      it "Debug.info matches Configuration for resolved_key_file (nil)" do
+        info = described_class.info
+        config = SopsRails.config
+
+        expect(info[:resolved_key_file]).to eq(config.resolved_age_key_file)
+        expect(info[:resolved_key_file]).to be_nil
+      end
+
+      it "Debug.info matches Configuration for public_key (nil)" do
+        info = described_class.info
+        config = SopsRails.config
+
+        expect(info[:public_key]).to eq(config.public_key)
+        expect(info[:public_key]).to be_nil
       end
     end
   end

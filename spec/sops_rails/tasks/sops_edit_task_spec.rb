@@ -2,6 +2,7 @@
 
 require "spec_helper"
 require "rake"
+require "tmpdir"
 
 # Set up rake environment and load the tasks file only if not already loaded
 Rake::Task.define_task(:environment) unless Rake::Task.task_defined?(:environment)
@@ -10,7 +11,7 @@ load File.expand_path("../../../lib/sops_rails/tasks/sops.rake", __dir__) unless
 RSpec.describe SopsEditTask do
   around do |example|
     # Save and restore RAILS_ENV for clean test state
-    original_env = ENV["RAILS_ENV"]
+    original_env = ENV.fetch("RAILS_ENV", nil)
     example.run
     ENV["RAILS_ENV"] = original_env
   end
@@ -207,6 +208,134 @@ RSpec.describe SopsEditTask do
           true
         end
         described_class.ensure_template_exists(file_path)
+      end
+    end
+  end
+end
+
+# Integration tests - require real SOPS binary and age keys
+RSpec.describe SopsEditTask, "integration tests", :integration do
+  include_context "with clean environment"
+
+  let(:temp_dir) { Dir.mktmpdir }
+  let(:test_file) { File.join(temp_dir, "credentials.yaml.enc") }
+
+  before do
+    skip ".sops.yaml not found - run sops:init first" unless File.exist?(".sops.yaml")
+  end
+
+  after do
+    FileUtils.rm_rf(temp_dir)
+  end
+
+  describe ".ensure_template_exists with real encryption" do
+    it "creates a valid encrypted SOPS file" do
+      # Act: Create template file
+      result = described_class.ensure_template_exists(test_file)
+
+      # Assert: File was created
+      expect(result).to be true
+      expect(File.exist?(test_file)).to be true
+
+      # Assert: File is valid SOPS format
+      expect(valid_sops_file?(test_file)).to be true
+    end
+
+    it "creates file that can be decrypted" do
+      # Act: Create template file
+      described_class.ensure_template_exists(test_file)
+
+      # Assert: Can decrypt the file
+      expect { SopsRails::Binary.decrypt(test_file) }.not_to raise_error
+
+      # Assert: Decrypted content is not empty
+      decrypted_content = SopsRails::Binary.decrypt(test_file)
+      expect(decrypted_content).not_to be_empty
+    end
+
+    it "creates template with expected YAML structure" do
+      # Act: Create template file and decrypt
+      described_class.ensure_template_exists(test_file)
+      decrypted_content = SopsRails::Binary.decrypt(test_file)
+
+      # Assert: Parse YAML successfully
+      parsed = YAML.safe_load(decrypted_content, permitted_classes: [], permitted_symbols: [], aliases: true)
+      expect(parsed).to be_a(Hash)
+
+      # Assert: Contains secret_key_base
+      expect(parsed).to have_key("secret_key_base")
+      expect(parsed["secret_key_base"]).to be_a(String)
+      expect(parsed["secret_key_base"]).to match(/^[a-f0-9]{128}$/)
+    end
+
+    it "creates template with Rails-like comments" do
+      # Act: Create template file and decrypt
+      described_class.ensure_template_exists(test_file)
+      decrypted_content = SopsRails::Binary.decrypt(test_file)
+
+      # Assert: Contains expected comment structure
+      expect(decrypted_content).to include("MessageVerifiers")
+      expect(decrypted_content).to include("# aws:")
+      expect(decrypted_content).to include("#   access_key_id:")
+      expect(decrypted_content).to include("# database:")
+      expect(decrypted_content).to include("#   password:")
+    end
+
+    it "generates unique secret_key_base each time" do
+      # Act: Create two template files
+      file1 = File.join(temp_dir, "credentials1.yaml.enc")
+      file2 = File.join(temp_dir, "credentials2.yaml.enc")
+
+      described_class.ensure_template_exists(file1)
+      described_class.ensure_template_exists(file2)
+
+      # Assert: Decrypt both files
+      content1 = SopsRails::Binary.decrypt(file1)
+      content2 = SopsRails::Binary.decrypt(file2)
+
+      # Assert: Parse YAML
+      parsed1 = YAML.safe_load(content1)
+      parsed2 = YAML.safe_load(content2)
+
+      # Assert: secret_key_base values are different
+      expect(parsed1["secret_key_base"]).not_to eq(parsed2["secret_key_base"])
+    end
+
+    it "returns false when file already exists" do
+      # Arrange: Create file first
+      described_class.ensure_template_exists(test_file)
+
+      # Act: Try to create again
+      result = described_class.ensure_template_exists(test_file)
+
+      # Assert: Returns false (did not create)
+      expect(result).to be false
+    end
+
+    context "when validating SOPS file format" do
+      before do
+        described_class.ensure_template_exists(test_file)
+      end
+
+      it "contains sops metadata key" do
+        content = File.read(test_file)
+        parsed = YAML.safe_load(content, permitted_classes: [Time])
+        expect(parsed).to have_key("sops")
+      end
+
+      it "has valid SOPS metadata structure" do
+        content = File.read(test_file)
+        parsed = YAML.safe_load(content, permitted_classes: [Time])
+        sops_meta = parsed["sops"]
+
+        expect(sops_meta).to have_key("mac")
+        expect(sops_meta).to have_key("lastmodified")
+        expect(sops_meta).to have_key("version")
+      end
+
+      it "passes sops --file-status check" do
+        _stdout, stderr, status = Open3.capture3("sops", "--file-status", test_file)
+        expect(status.success?).to be(true), "sops --file-status failed: #{stderr}"
       end
     end
   end
