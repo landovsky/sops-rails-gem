@@ -211,6 +211,62 @@ RSpec.describe SopsRails::Binary do
           expect { described_class.decrypt(file_path) }.to raise_error(SopsRails::DecryptionError, /#{file_path}/)
         end
       end
+
+      context "environment variable verification" do
+        context "when no age key is configured" do
+          before do
+            allow(SopsRails.config).to receive(:age_key).and_return(nil)
+            allow(SopsRails.config).to receive(:resolved_age_key_file).and_return(nil)
+          end
+
+          it "passes empty environment hash to SOPS" do
+            expect(Open3).to receive(:capture3) do |env, *args|
+              expect(env).to eq({})
+              expect(args).to eq(["sops", "-d", file_path])
+              [decrypted_content, "", double(success?: true)]
+            end
+            described_class.decrypt(file_path)
+          end
+        end
+
+        context "when age key file is configured" do
+          let(:key_file) { "/custom/path/keys.txt" }
+
+          before do
+            ENV["SOPS_AGE_KEY_FILE"] = key_file
+            SopsRails.reset!
+            allow(File).to receive(:exist?).and_call_original
+            allow(File).to receive(:exist?).with(File.expand_path(key_file)).and_return(true)
+          end
+
+          it "passes SOPS_AGE_KEY_FILE in environment" do
+            expect(Open3).to receive(:capture3) do |env, *args|
+              expect(env).to include("SOPS_AGE_KEY_FILE" => File.expand_path(key_file))
+              expect(args).to eq(["sops", "-d", file_path])
+              [decrypted_content, "", double(success?: true)]
+            end
+            described_class.decrypt(file_path)
+          end
+        end
+
+        context "when inline age key is configured" do
+          let(:age_key) { "AGE-SECRET-KEY-1234567890ABCDEF" }
+
+          before do
+            ENV["SOPS_AGE_KEY"] = age_key
+            SopsRails.reset!
+          end
+
+          it "passes SOPS_AGE_KEY in environment" do
+            expect(Open3).to receive(:capture3) do |env, *args|
+              expect(env).to include("SOPS_AGE_KEY" => age_key)
+              expect(args).to eq(["sops", "-d", file_path])
+              [decrypted_content, "", double(success?: true)]
+            end
+            described_class.decrypt(file_path)
+          end
+        end
+      end
     end
 
     it_behaves_like "requires sops binary", :decrypt, "config/credentials.yaml.enc"
@@ -329,7 +385,10 @@ RSpec.describe SopsRails::Binary do
       it "calls sops -e -i with target file path for in-place encryption" do
         # Ensure no public key is available for this test
         allow(SopsRails.config).to receive(:public_key).and_return(nil)
-        expect(Open3).to receive(:capture3) do |_env, *args|
+        allow(SopsRails.config).to receive(:age_key).and_return(nil)
+        allow(SopsRails.config).to receive(:resolved_age_key_file).and_return(nil)
+        expect(Open3).to receive(:capture3) do |env, *args|
+          expect(env).to eq({})
           expect(args.size).to eq(4) # ["sops", "-e", "-i", file_path]
           expect(args[0]).to eq("sops")
           expect(args[1]).to eq("-e")
@@ -350,7 +409,8 @@ RSpec.describe SopsRails::Binary do
         end
 
         it "includes --age flag with public key in sops command" do
-          expect(Open3).to receive(:capture3) do |_env, *args|
+          expect(Open3).to receive(:capture3) do |env, *args|
+            expect(env).to be_a(Hash)  # May include SOPS_AGE_KEY_FILE if configured
             expect(args.size).to eq(6) # ["sops", "-e", "-i", "--age", public_key, file_path]
             expect(args[0]).to eq("sops")
             expect(args[1]).to eq("-e")
@@ -365,7 +425,8 @@ RSpec.describe SopsRails::Binary do
 
         it "passes public_key explicitly if provided" do
           custom_key = "age1customkeyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq"
-          expect(Open3).to receive(:capture3) do |_env, *args|
+          expect(Open3).to receive(:capture3) do |env, *args|
+            expect(env).to be_a(Hash)  # May include SOPS_AGE_KEY_FILE if configured
             expect(args.size).to eq(6) # ["sops", "-e", "-i", "--age", custom_key, file_path]
             expect(args[0]).to eq("sops")
             expect(args[1]).to eq("-e")
@@ -382,10 +443,13 @@ RSpec.describe SopsRails::Binary do
       context "when public key is not available" do
         before do
           allow(SopsRails.config).to receive(:public_key).and_return(nil)
+          allow(SopsRails.config).to receive(:age_key).and_return(nil)
+          allow(SopsRails.config).to receive(:resolved_age_key_file).and_return(nil)
         end
 
         it "calls sops without --age flag (relies on .sops.yaml)" do
-          expect(Open3).to receive(:capture3) do |_env, *args|
+          expect(Open3).to receive(:capture3) do |env, *args|
+            expect(env).to eq({})
             expect(args.size).to eq(4) # ["sops", "-e", "-i", file_path]
             expect(args[0]).to eq("sops")
             expect(args[1]).to eq("-e")
@@ -403,6 +467,48 @@ RSpec.describe SopsRails::Binary do
         expect do
           described_class.encrypt_to_file(file_path, content)
         end.to raise_error(SopsRails::EncryptionError, /encryption failed/)
+      end
+
+      context "environment variable verification" do
+        context "when age key file is configured" do
+          let(:key_file) { "/custom/keys.txt" }
+
+          before do
+            ENV["SOPS_AGE_KEY_FILE"] = key_file
+            SopsRails.reset!
+            allow(File).to receive(:exist?).and_call_original
+            allow(File).to receive(:exist?).with(File.expand_path(key_file)).and_return(true)
+            allow(SopsRails.config).to receive(:public_key).and_return(nil)
+          end
+
+          it "includes SOPS_AGE_KEY_FILE in environment" do
+            expect(Open3).to receive(:capture3) do |env, *args|
+              expect(env).to include("SOPS_AGE_KEY_FILE" => File.expand_path(key_file))
+              expect(args).to eq(["sops", "-e", "-i", file_path])
+              ["", "", success_status]
+            end
+            described_class.encrypt_to_file(file_path, content)
+          end
+        end
+
+        context "when inline age key is configured" do
+          let(:age_key) { "AGE-SECRET-KEY-1234567890ABCDEF" }
+
+          before do
+            ENV["SOPS_AGE_KEY"] = age_key
+            SopsRails.reset!
+            allow(SopsRails.config).to receive(:public_key).and_return(nil)
+          end
+
+          it "includes SOPS_AGE_KEY in environment" do
+            expect(Open3).to receive(:capture3) do |env, *args|
+              expect(env).to include("SOPS_AGE_KEY" => age_key)
+              expect(args).to eq(["sops", "-e", "-i", file_path])
+              ["", "", success_status]
+            end
+            described_class.encrypt_to_file(file_path, content)
+          end
+        end
       end
 
       context "when debug mode is enabled" do

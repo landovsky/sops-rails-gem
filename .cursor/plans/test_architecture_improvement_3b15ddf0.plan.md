@@ -22,7 +22,7 @@ todos:
       - support-infrastructure
   - id: refactor-env-isolation
     content: Refactor specs to use shared clean_environment context
-    status: pending
+    status: in_progress
     dependencies:
       - support-infrastructure
 ---
@@ -137,7 +137,3 @@ Extend this pattern to also verify:
 
 - Environment hash contains expected keys when key file configured
 - No `--age` flag when `public_key` is nil (line 388 does this well)
-
----
-
-## Files to Create
