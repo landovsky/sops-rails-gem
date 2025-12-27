@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "tmpdir"
+
 RSpec.describe SopsRails::Credentials do
   shared_context "with debug logging capture" do
     let(:logged_messages) { [] }
@@ -433,6 +435,153 @@ RSpec.describe SopsRails do
       expect(SopsRails.credentials.aws.access_key_id).to eq("AKIAIOSFODNN7EXAMPLE")
       expect(SopsRails.credentials.nonexistent.nested.key).to be_nil
       expect(SopsRails.credentials.dig(:aws, :access_key_id)).to eq("AKIAIOSFODNN7EXAMPLE")
+    end
+  end
+end
+
+# Integration tests - require real SOPS binary and age keys
+RSpec.describe SopsRails::Credentials, "integration tests", :integration do
+  include_context "with clean environment"
+
+  let(:temp_dir) { Dir.mktmpdir }
+
+  before do
+    skip ".sops.yaml not found - run sops:init first" unless File.exist?(".sops.yaml")
+    SopsRails.configure do |config|
+      config.encrypted_path = temp_dir
+      config.credential_files = ["credentials.yaml.enc"]
+    end
+  end
+
+  after do
+    FileUtils.rm_rf(temp_dir)
+  end
+
+  describe ".load with real encryption/decryption" do
+    let(:credentials_file) { File.join(temp_dir, "credentials.yaml.enc") }
+    let(:plain_content) do
+      <<~YAML
+        aws:
+          access_key_id: AKIAIOSFODNN7EXAMPLE
+          secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          region: us-east-1
+          nested:
+            deep:
+              value: found
+        database:
+          host: localhost
+          credentials:
+            username: admin
+            password: supersecret
+      YAML
+    end
+
+    it "performs full round-trip: encrypt -> load -> verify values" do
+      # Encrypt the content to a real file
+      SopsRails::Binary.encrypt_to_file(credentials_file, plain_content)
+
+      # Verify the encrypted file is valid SOPS format
+      expect(valid_sops_file?(credentials_file)).to be true
+
+      # Load credentials through Credentials.load (which calls Binary.decrypt internally)
+      credentials = described_class.load
+
+      # Verify all values are accessible and correct
+      expect(credentials.aws.access_key_id).to eq("AKIAIOSFODNN7EXAMPLE")
+      expect(credentials.aws.secret_access_key).to eq("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")
+      expect(credentials.aws.region).to eq("us-east-1")
+      expect(credentials.database.host).to eq("localhost")
+      expect(credentials.database.credentials.username).to eq("admin")
+      expect(credentials.database.credentials.password).to eq("supersecret")
+    end
+
+    it "supports method chaining on real decrypted data" do
+      SopsRails::Binary.encrypt_to_file(credentials_file, plain_content)
+
+      credentials = described_class.load
+
+      # Test method chaining at various depths
+      expect(credentials.aws.nested.deep.value).to eq("found")
+      expect(credentials.database.credentials.password).to eq("supersecret")
+
+      # Test that missing keys return nil without raising errors
+      expect(credentials.nonexistent.nested.key).to be_nil
+      expect(credentials.aws.nonexistent.deep).to be_nil
+    end
+
+    it "supports dig method on real decrypted data" do
+      SopsRails::Binary.encrypt_to_file(credentials_file, plain_content)
+
+      credentials = described_class.load
+
+      # Test dig with symbols
+      expect(credentials.dig(:aws, :access_key_id)).to eq("AKIAIOSFODNN7EXAMPLE")
+      expect(credentials.dig(:aws, :nested, :deep, :value)).to eq("found")
+      expect(credentials.dig(:database, :credentials, :password)).to eq("supersecret")
+
+      # Test dig with missing keys returns nil
+      expect(credentials.dig(:missing, :key)).to be_nil
+      expect(credentials.dig(:aws, :missing, :nested)).to be_nil
+    end
+
+    it "creates encrypted file that passes SOPS validation" do
+      SopsRails::Binary.encrypt_to_file(credentials_file, plain_content)
+
+      # Use shared example to verify SOPS file format
+      it_behaves_like "a valid SOPS encrypted file", credentials_file
+    end
+
+    context "with multiple credential files" do
+      let(:base_file) { File.join(temp_dir, "credentials.yaml.enc") }
+      let(:local_file) { File.join(temp_dir, "credentials.local.yaml.enc") }
+      let(:base_content) do
+        <<~YAML
+          aws:
+            region: us-east-1
+            key: base_key
+          database:
+            host: localhost
+        YAML
+      end
+      let(:local_content) do
+        <<~YAML
+          aws:
+            key: override_key
+            secret: override_secret
+          database:
+            host: production.example.com
+        YAML
+      end
+
+      before do
+        SopsRails.configure do |config|
+          config.encrypted_path = temp_dir
+          config.credential_files = ["credentials.yaml.enc", "credentials.local.yaml.enc"]
+        end
+      end
+
+      it "performs round-trip with deep merge of multiple encrypted files" do
+        # Encrypt both files
+        SopsRails::Binary.encrypt_to_file(base_file, base_content)
+        SopsRails::Binary.encrypt_to_file(local_file, local_content)
+
+        # Verify both files are valid SOPS format
+        expect(valid_sops_file?(base_file)).to be true
+        expect(valid_sops_file?(local_file)).to be true
+
+        # Load credentials (should merge both files)
+        credentials = described_class.load
+
+        # Verify base values are present when not overridden
+        expect(credentials.aws.region).to eq("us-east-1")
+
+        # Verify override values are used
+        expect(credentials.aws.key).to eq("override_key")
+
+        # Verify new values from override file
+        expect(credentials.aws.secret).to eq("override_secret")
+        expect(credentials.database.host).to eq("production.example.com")
+      end
     end
   end
 end
