@@ -17,7 +17,7 @@ todos:
       - support-infrastructure
   - id: debug-config-consistency
     content: Add Debug/Configuration consistency tests
-    status: pending
+    status: completed
     dependencies:
       - support-infrastructure
   - id: refactor-env-isolation
@@ -141,7 +141,3 @@ Extend this pattern to also verify:
 ---
 
 ## Files to Create
-
-| File | Purpose ||------|---------|| `spec/support/shared_examples/sops_file_contract.rb` | Contract tests for SOPS file format || `spec/support/helpers/sops_validation_helper.rb` | Validation helper methods || `spec/support/shared_contexts/clean_environment.rb` | Environment isolation shared context |
-
-## Files to Modify
