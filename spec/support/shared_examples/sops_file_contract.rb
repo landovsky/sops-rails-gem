@@ -17,9 +17,9 @@ RSpec.shared_examples "a valid SOPS encrypted file" do |file_path|
     expect(sops_meta).to have_key("version")
   end
 
-  it "passes sops --file-status check", :integration do
-    _stdout, stderr, status = Open3.capture3("sops", "--file-status", file_path)
-    expect(status.success?).to be(true), "sops --file-status failed: #{stderr}"
+  it "passes sops filestatus check", :integration do
+    _stdout, stderr, status = Open3.capture3("sops", "filestatus", file_path)
+    expect(status.success?).to be(true), "sops filestatus failed: #{stderr}"
   end
 
   it "can be decrypted", :integration do

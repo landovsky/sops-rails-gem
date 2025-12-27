@@ -597,7 +597,8 @@ RSpec.describe SopsRails::Binary do
         # Verify it's actually encrypted (not plain text)
         file_content = File.read(test_file)
         expect(file_content).not_to include("test123")
-        expect(file_content).to include("sops:") # SOPS metadata
+        # SOPS metadata can be in YAML or JSON format depending on file extension matching
+        expect(file_content).to match(/"sops"|sops:/) # SOPS metadata in either format
 
         # Decrypt and verify content matches
         decrypted = described_class.decrypt(test_file)
@@ -619,12 +620,12 @@ RSpec.describe SopsRails::Binary do
         expect(parsed["sops"]).to have_key("lastmodified")
       end
 
-      it "creates a file that passes sops --file-status check" do
+      it "creates a file that passes sops filestatus check" do
         described_class.encrypt_to_file(test_file, plain_content)
 
         # Verify file status is valid
-        _stdout, stderr, status = Open3.capture3("sops", "--file-status", test_file)
-        expect(status.success?).to be true, "File status check failed: #{stderr}"
+        _stdout, stderr, status = Open3.capture3("sops", "filestatus", test_file)
+        expect(status.success?).to be(true), "File status check failed: #{stderr}"
       end
 
       it "creates a file that can be edited with sops edit" do
@@ -635,8 +636,8 @@ RSpec.describe SopsRails::Binary do
         expect { described_class.decrypt(test_file) }.not_to raise_error
 
         # Verify the file is recognized by SOPS as editable
-        _stdout, stderr, status = Open3.capture3("sops", "--file-status", test_file)
-        expect(status.success?).to be true, "File not recognized by SOPS: #{stderr}"
+        _stdout, stderr, status = Open3.capture3("sops", "filestatus", test_file)
+        expect(status.success?).to be(true), "File not recognized by SOPS: #{stderr}"
       end
     end
   end

@@ -527,8 +527,12 @@ RSpec.describe SopsRails::Credentials, "integration tests", :integration do
     it "creates encrypted file that passes SOPS validation" do
       SopsRails::Binary.encrypt_to_file(credentials_file, plain_content)
 
-      # Use shared example to verify SOPS file format
-      it_behaves_like "a valid SOPS encrypted file", credentials_file
+      # Verify the file can be decrypted
+      expect { SopsRails::Binary.decrypt(credentials_file) }.not_to raise_error
+
+      # Verify SOPS recognizes it as a valid encrypted file
+      _stdout, stderr, status = Open3.capture3("sops", "filestatus", credentials_file)
+      expect(status.success?).to be(true), "sops filestatus failed: #{stderr}"
     end
 
     context "with multiple credential files" do
