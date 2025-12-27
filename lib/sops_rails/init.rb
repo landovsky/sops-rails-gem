@@ -258,31 +258,9 @@ module SopsRails
           end
         end
 
-        # Write template to temporary file, encrypt it, then remove temp file
-        temp_file = "#{credentials_path}.tmp"
-        begin
-          File.write(temp_file, CREDENTIALS_TEMPLATE)
-
-          # Encrypt using SOPS with explicit age key to avoid .sops.yaml pattern matching issues
-          # (temp file name doesn't match the credentials regex pattern)
-          sops_args = ["sops", "-e", "-i"]
-          sops_args.push("--age", public_key) if public_key
-          sops_args.push(temp_file)
-
-          stdout, stderr, status = Open3.capture3(*sops_args)
-          unless status.success?
-            error_message = stderr.strip.empty? ? stdout.strip : stderr.strip
-            raise EncryptionError,
-                  "Failed to encrypt credentials file: #{error_message}"
-          end
-
-          # Move encrypted file to final location
-          FileUtils.mv(temp_file, credentials_path)
-          puts "✓ Created #{credentials_path}"
-        ensure
-          # Clean up temp file if it still exists
-          FileUtils.rm_f(temp_file)
-        end
+        # Use Binary.encrypt_to_file for consistent SOPS environment handling
+        Binary.encrypt_to_file(credentials_path, CREDENTIALS_TEMPLATE, public_key: public_key)
+        puts "✓ Created #{credentials_path}"
       end
     end
   end

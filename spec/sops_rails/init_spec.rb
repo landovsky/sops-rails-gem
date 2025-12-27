@@ -305,8 +305,7 @@ RSpec.describe SopsRails::Init do
     let(:credentials_dir) { "config" }
 
     before do
-      allow(SopsRails::Binary).to receive(:available?).and_return(true)
-      allow(Open3).to receive(:capture3).and_return(["", "", double(success?: true)])
+      allow(SopsRails::Binary).to receive(:encrypt_to_file).and_return(true)
     end
 
     context "when credentials file does not exist" do
@@ -315,28 +314,24 @@ RSpec.describe SopsRails::Init do
         expect(File.directory?(credentials_dir)).to be true
       end
 
-      it "encrypts the template using SOPS" do
-        expect(Open3).to receive(:capture3) do |*args|
-          expect(args[0]).to eq("sops")
-          expect(args[1]).to eq("-e")
-          expect(args[2]).to eq("-i")
-          expect(args[3]).to end_with(".tmp")
-          ["", "", double(success?: true)]
-        end
+      it "encrypts the template using Binary.encrypt_to_file" do
+        expect(SopsRails::Binary).to receive(:encrypt_to_file).with(
+          credentials_path,
+          SopsRails::Init::CREDENTIALS_TEMPLATE,
+          public_key: nil
+        )
 
         described_class.create_initial_credentials(non_interactive: true)
       end
 
       it "creates the encrypted credentials file" do
-        # Mock file operations
-        allow(FileUtils).to receive(:mkdir_p)
-        allow(File).to receive(:write)
-        allow(FileUtils).to receive(:mv)
-        allow(FileUtils).to receive(:rm_f)
-
         described_class.create_initial_credentials(non_interactive: true)
 
-        expect(FileUtils).to have_received(:mv).with(anything, credentials_path)
+        expect(SopsRails::Binary).to have_received(:encrypt_to_file).with(
+          credentials_path,
+          SopsRails::Init::CREDENTIALS_TEMPLATE,
+          public_key: nil
+        )
       end
     end
 
@@ -348,14 +343,9 @@ RSpec.describe SopsRails::Init do
 
       context "in non-interactive mode" do
         it "overwrites the file" do
-          allow(FileUtils).to receive(:mkdir_p)
-          allow(File).to receive(:write)
-          allow(FileUtils).to receive(:mv)
-          allow(FileUtils).to receive(:rm_f)
-
           described_class.create_initial_credentials(non_interactive: true)
 
-          expect(FileUtils).to have_received(:mv)
+          expect(SopsRails::Binary).to have_received(:encrypt_to_file)
         end
       end
 
@@ -365,53 +355,48 @@ RSpec.describe SopsRails::Init do
           described_class.create_initial_credentials(non_interactive: false)
 
           expect(File.read(credentials_path)).to eq("encrypted content")
+          expect(SopsRails::Binary).not_to have_received(:encrypt_to_file)
         end
 
         it "overwrites when user confirms" do
           allow($stdin).to receive(:gets).and_return("y\n")
-          allow(FileUtils).to receive(:mkdir_p)
-          allow(File).to receive(:write)
-          allow(FileUtils).to receive(:mv)
-          allow(FileUtils).to receive(:rm_f)
 
           described_class.create_initial_credentials(non_interactive: false)
 
-          expect(FileUtils).to have_received(:mv)
+          expect(SopsRails::Binary).to have_received(:encrypt_to_file)
         end
       end
     end
 
     context "when encryption fails" do
       before do
-        allow(FileUtils).to receive(:mkdir_p)
-        allow(File).to receive(:write)
-        allow(Open3).to receive(:capture3).and_return(["", "encryption failed", double(success?: false)])
-        allow(FileUtils).to receive(:rm_f)
+        allow(SopsRails::Binary).to receive(:encrypt_to_file).and_raise(
+          SopsRails::EncryptionError, "encryption failed"
+        )
       end
 
       it "raises EncryptionError" do
-        expect { described_class.create_initial_credentials(non_interactive: true) }.to raise_error(SopsRails::EncryptionError)
+        expect do
+          described_class.create_initial_credentials(non_interactive: true)
+        end.to raise_error(SopsRails::EncryptionError)
       end
 
-      it "cleans up temporary file" do
-        expect(FileUtils).to receive(:rm_f).with(anything)
-        begin
+      it "propagates the error from Binary.encrypt_to_file" do
+        expect do
           described_class.create_initial_credentials(non_interactive: true)
-        rescue SopsRails::EncryptionError
-          # Expected
-        end
+        end.to raise_error(SopsRails::EncryptionError, /encryption failed/)
       end
     end
 
     context "when public_key is provided" do
       let(:public_key) { "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" }
 
-      it "passes the age key explicitly to SOPS to avoid .sops.yaml pattern matching issues" do
-        expect(Open3).to receive(:capture3) do |*args|
-          expect(args).to include("--age")
-          expect(args).to include(public_key)
-          ["", "", double(success?: true)]
-        end
+      it "passes the age key to Binary.encrypt_to_file" do
+        expect(SopsRails::Binary).to receive(:encrypt_to_file).with(
+          credentials_path,
+          SopsRails::Init::CREDENTIALS_TEMPLATE,
+          public_key: public_key
+        )
 
         described_class.create_initial_credentials(non_interactive: true, public_key: public_key)
       end
